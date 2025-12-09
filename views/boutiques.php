@@ -1,997 +1,1214 @@
 <?php
-# Se connecter à la BD
+# Connexion à la base de données
 include '../connexion/connexion.php';
-# Selection Querries
-require_once('../models/select/select-boutique.php');
 
+// Vérification de l'authentification PDG
+if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'pdg') {
+    header('Location: ../login.php');
+    exit;
+}
+
+// Initialisation des variables
+$message = '';
+$message_type = '';
+$total_boutiques = 0;
+$boutiques = [];
+
+// --- GESTION DES MESSAGES DE REDIRECTION (PRG Pattern) ---
+if (isset($_GET['msg'])) {
+    $msg = $_GET['msg'];
+    $message_map = [
+        'success_add' => ["Boutique ajoutée avec succès !", "success"],
+        'success_edit' => ["Boutique modifiée avec succès !", "success"],
+        'success_toggle' => ["Statut de la boutique mis à jour !", "info"],
+        'success_delete' => ["Boutique supprimée (archivée) !", "warning"],
+        'error' => ["Une erreur est survenue lors de l'opération.", "error"],
+    ];
+
+    if (isset($message_map[$msg])) {
+        list($message, $message_type) = $message_map[$msg];
+    }
+}
+
+// Traitement des actions POST
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // --- NOTE SÉCURITÉ IMPORTANTE : Ajout de la protection CSRF recommandé ici ---
+    
+    try {
+        // AJOUTER une boutique
+        if (isset($_POST['ajouter_boutique'])) {
+            $nom = htmlspecialchars(trim($_POST['nom']));
+            $email = htmlspecialchars(trim($_POST['email']));
+            $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+            $actif = isset($_POST['actif']) ? 1 : 0;
+
+            $stmt = $pdo->prepare("INSERT INTO boutiques (nom, email, password, actif) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$nom, $email, $password, $actif]);
+            
+            header('Location: boutiques.php?msg=success_add');
+            exit;
+        }
+
+        // MODIFIER une boutique
+        if (isset($_POST['modifier_boutique'])) {
+            $id = $_POST['id'];
+            $nom = htmlspecialchars(trim($_POST['nom']));
+            $email = htmlspecialchars(trim($_POST['email']));
+            $actif = isset($_POST['actif']) ? 1 : 0;
+
+            if (!empty($_POST['password'])) {
+                $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+                $stmt = $pdo->prepare("UPDATE boutiques SET nom = ?, email = ?, password = ?, actif = ? WHERE id = ?");
+                $stmt->execute([$nom, $email, $password, $actif, $id]);
+            } else {
+                $stmt = $pdo->prepare("UPDATE boutiques SET nom = ?, email = ?, actif = ? WHERE id = ?");
+                $stmt->execute([$nom, $email, $actif, $id]);
+            }
+
+            header('Location: boutiques.php?msg=success_edit');
+            exit;
+        }
+
+        // DÉSACTIVER/ACTIVER une boutique
+        if (isset($_POST['toggle_actif'])) {
+            $id = $_POST['id'];
+            $stmt = $pdo->prepare("SELECT actif FROM boutiques WHERE id = ?");
+            $stmt->execute([$id]);
+            $boutique = $stmt->fetch();
+            $new_actif = $boutique['actif'] ? 0 : 1;
+
+            $stmt = $pdo->prepare("UPDATE boutiques SET actif = ? WHERE id = ?");
+            $stmt->execute([$new_actif, $id]);
+            
+            header('Location: boutiques.php?msg=success_toggle');
+            exit;
+        }
+
+        // SUPPRIMER une boutique (soft delete)
+        if (isset($_POST['supprimer_boutique'])) {
+            $id = $_POST['id'];
+
+            // Ici, nous faisons un soft delete (statut = 1)
+            $stmt = $pdo->prepare("UPDATE boutiques SET statut = 1 WHERE id = ?"); 
+            $stmt->execute([$id]);
+            
+            header('Location: boutiques.php?msg=success_delete');
+            exit;
+        }
+    } catch (PDOException $e) {
+        // En cas d'erreur PDO, rediriger avec un message d'erreur
+        error_log("DB Error: " . $e->getMessage()); // Log l'erreur
+        header('Location: boutiques.php?msg=error');
+        exit;
+    }
+}
+
+// Vérifier si c'est une requête AJAX pour récupérer les données d'une boutique (pour édition)
+if (isset($_GET['action']) && $_GET['action'] == 'get_boutique' && isset($_GET['id'])) {
+    $boutiqueId = intval($_GET['id']);
+    try {
+        $query = $pdo->prepare("SELECT id, nom, email, actif FROM boutiques WHERE id = ? AND statut = 0");
+        $query->execute([$boutiqueId]);
+        $boutique = $query->fetch(PDO::FETCH_ASSOC);
+
+        if ($boutique) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => true, 'boutique' => $boutique]);
+        } else {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'Boutique non trouvée']);
+        }
+    } catch (PDOException $e) {
+        header('Content-Type: application/json');
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Erreur de base de données.']);
+    }
+    exit;
+}
+
+// Pagination
+$limit = 10;
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$offset = ($page - 1) * $limit;
+
+// Compter le nombre total de boutiques
+try {
+    $countQuery = $pdo->query("SELECT COUNT(*) FROM boutiques WHERE statut = 0");
+    $total_boutiques = $countQuery->fetchColumn();
+    $totalPages = ceil($total_boutiques / $limit);
+
+    // Requête paginée
+    $query = $pdo->prepare("SELECT * FROM boutiques WHERE statut = 0 ORDER BY actif DESC, date_creation DESC LIMIT :limit OFFSET :offset");
+    $query->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $query->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $query->execute();
+    $boutiques = $query->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Compter les actifs pour la carte de stats
+    $active_count_total = $pdo->query("SELECT COUNT(*) FROM boutiques WHERE actif = 1 AND statut = 0")->fetchColumn();
+
+} catch (PDOException $e) {
+    $message = "Erreur lors du chargement des boutiques: " . $e->getMessage();
+    $message_type = "error";
+    $active_count_total = 0;
+}
 ?>
+
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="h-full">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestion des Boutiques - GestionLoyer</title>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Gestion des boutiques - Julien_Rideau</title>
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Ajouter Toastify CSS -->
-    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
     <style>
-        .sidebar {
-            transition: all 0.3s;
-            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+        :root {
+            --primary: #0A2540;
+            --secondary: #7B61FF;
+            --accent: #00D4AA;
+            --light: #F8FAFC;
+            --dark: #1E293B;
         }
 
-        .sidebar.collapsed {
-            margin-left: -16rem;
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
         }
 
-        .main-content {
-            transition: all 0.3s;
+        .font-display {
+            font-family: 'Outfit', sans-serif;
         }
 
-        .main-content.expanded {
-            margin-left: 0;
+        .gradient-bg {
+            background: linear-gradient(135deg, #0A2540 0%, #1E3A5F 100%);
         }
 
-        .navbar-gradient {
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        .gradient-accent {
+            background: linear-gradient(90deg, #7B61FF 0%, #00D4AA 100%);
         }
 
-        .btn-gradient {
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        .gradient-blue-btn {
+            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%); 
+            color: white; 
+            transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
         }
 
-        .btn-gradient:hover {
-            background: linear-gradient(90deg, #5a6fd8 0%, #6a4190 100%);
+        .gradient-blue-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
         }
 
-        .card-gradient {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        }
-
-        .glass-effect {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        .shadow-soft {
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
         }
 
         .hover-lift {
-            transition: all 0.3s ease;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
 
         .hover-lift:hover {
             transform: translateY(-5px);
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
         }
 
-        .modal-backdrop {
-            background: rgba(0, 0, 0, 0.5);
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out;
         }
-        
-        /* Styles pour les barres de défilement */
-        .scrollable-menu {
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
             overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
+        }
+
+        .slide-down {
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background-color: #D1FAE5;
+            color: #065F46;
+        }
+
+        .status-inactive {
+            background-color: #FEE2E2;
+            color: #991B1B;
         }
         
-        /* Pour WebKit (Chrome, Safari) */
-        .scrollable-menu::-webkit-scrollbar {
+        .dropdown-menu {
+            position: absolute;
+            right: 0;
+            top: 100%;
+            z-index: 10;
+        }
+
+        /* NOUVELLES STYLES POUR LA SIDEBAR AVEC DÉFILEMENT */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar-header, .sidebar-profile, .sidebar-footer {
+            flex-shrink: 0;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            min-height: 0;
+        }
+
+        /* Personnalisation de la scrollbar pour la sidebar */
+        .sidebar-nav::-webkit-scrollbar {
             width: 6px;
         }
-        
-        .scrollable-menu::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 3px;
+
+        .sidebar-nav::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
         }
-        
-        .scrollable-menu::-webkit-scrollbar-thumb {
-            background-color: rgba(255, 255, 255, 0.3);
-            border-radius: 3px;
+
+        .sidebar-nav::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            transition: background 0.3s ease;
         }
-        
-        .scrollable-menu::-webkit-scrollbar-thumb:hover {
-            background-color: rgba(255, 255, 255, 0.5);
+
+        .sidebar-nav::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
         }
-        
+
         /* Pour Firefox */
-        .scrollable-menu {
+        .sidebar-nav {
             scrollbar-width: thin;
-            scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
+            scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
         }
-        
-        /* Style spécifique pour la sidebar */
-        .sidebar-content {
-            height: calc(100vh - 6rem);
+
+        /* Animation de transition pour les liens de la sidebar */
+        .nav-link {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .nav-link:hover {
+            padding-left: 1.25rem;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .nav-link.active {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .nav-link.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 4px;
+            height: 60%;
+            background: var(--accent);
+            border-radius: 0 4px 4px 0;
+        }
+
+        /* Amélioration de la zone de contenu principal */
+        .main-content {
+            height: 100vh;
             overflow-y: auto;
-            padding-bottom: 6rem; /* Espace pour le pied de page */
         }
-        
-        /* Style pour le menu utilisateur */
-        .user-menu-scroll {
-            max-height: 200px;
-            overflow-y: auto;
+
+        /* Smooth scroll pour tout le document */
+        html {
+            scroll-behavior: smooth;
         }
-        
-        /* Style pour le menu latéral sur petits écrans */
-        @media (max-height: 700px) {
-            .sidebar-content {
-                height: calc(100vh - 4rem);
-                padding-bottom: 4rem;
+
+        /* Animation pour le bouton mobile */
+        .mobile-menu-btn {
+            transition: transform 0.3s ease;
+        }
+
+        .mobile-menu-btn.active {
+            transform: rotate(90deg);
+        }
+
+        /* Effet de fondu pour les éléments de la table */
+        .fade-in-row {
+            animation: fadeInRow 0.5s ease-out forwards;
+            opacity: 0;
+        }
+
+        @keyframes fadeInRow {
+            to {
+                opacity: 1;
+            }
+        }
+
+        /* Hover effects pour les cartes de statistiques */
+        .stats-card {
+            transition: all 0.3s ease;
+        }
+
+        .stats-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Loading animation */
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Badge de notification */
+        .notification-badge {
+            position: absolute;
+            top: 0;
+            right: 0;
+            transform: translate(50%, -50%);
+            background: var(--accent);
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .sidebar-nav {
+                padding-top: 0.5rem;
+                padding-bottom: 0.5rem;
+            }
+            
+            .nav-link {
+                padding: 0.75rem 1rem;
+            }
+            
+            .stats-card {
+                margin-bottom: 1rem;
             }
         }
     </style>
 </head>
 
-<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
-    <!-- Barre de navigation supérieure -->
-    <nav class="navbar-gradient text-white fixed w-full z-10 shadow-lg">
-        <div class="flex items-center justify-between p-4">
-            <!-- Logo et nom de l'application -->
-            <div class="flex items-center">
-                <button id="sidebarToggle" class="mr-4 text-white hover:text-gray-200 transition-colors duration-200">
-                    <i class="fas fa-bars"></i>
-                </button>
-                <h1 class="text-xl font-bold">La veranda</h1>
-            </div>
+<body class="font-inter min-h-screen bg-gray-50">
+    <button id="mobileMenuButton" class="mobile-menu-btn md:hidden fixed top-4 left-4 z-50 p-3 text-white bg-gradient-to-r from-blue-600 to-purple-600 rounded-full shadow-lg hover:shadow-xl transition-shadow">
+        <i class="fas fa-bars"></i>
+    </button>
 
-            <!-- Barre de recherche -->
-            <div class="hidden md:flex items-center">
-                <div class="relative">
-                    <input type="text" placeholder="Rechercher..." class="glass-effect text-white rounded-lg py-2 px-4 pl-10 focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 placeholder-white placeholder-opacity-70">
-                    <i class="fas fa-search absolute left-3 top-3 text-white text-opacity-70"></i>
-                </div>
-            </div>
+    <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 
-            <!-- Menu utilisateur -->
-            <div class="relative">
-                <button id="userMenuButton" class="flex items-center text-white hover:text-gray-200 focus:outline-none transition-colors duration-200">
-                    <i class="fas fa-user-circle text-xl"></i>
-                    <i class="fas fa-chevron-down ml-2 text-xs"></i>
-                </button>
-                <div id="userMenu" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl py-1 text-gray-700 z-20 user-menu-scroll scrollable-menu">
-                    <a href="#" class="block px-4 py-2 hover:bg-purple-50 transition-colors duration-200">
-                        <i class="fas fa-user mr-2 text-purple-500"></i>Profil
-                    </a>
-                    <a href="#" class="block px-4 py-2 hover:bg-purple-50 transition-colors duration-200">
-                        <i class="fas fa-cog mr-2 text-purple-500"></i>Paramètres
-                    </a>
-                    <a href="#" class="block px-4 py-2 hover:bg-purple-50 transition-colors duration-200">
-                        <i class="fas fa-history mr-2 text-purple-500"></i>Journal d'activité
-                    </a>
-                    <div class="border-t my-1"></div>
-                    <a href="#" class="block px-4 py-2 hover:bg-purple-50 transition-colors duration-200">
-                        <i class="fas fa-sign-out-alt mr-2 text-purple-500"></i>Déconnexion
-                    </a>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <div class="flex pt-16">
-        <!-- Barre latérale -->
-        <div id="sidebar" class="sidebar text-white w-64 min-h-screen fixed shadow-xl">
-            <div class="sidebar-content p-4 scrollable-menu">
-                <!-- En-tête de la barre latérale -->
-                <div class="mb-8">
-                    <h2 class="text-lg font-semibold text-white text-opacity-80 uppercase tracking-wider">Principal</h2>
-                    <ul class="mt-2">
-                        <li>
-                            <a href="dashboard.php" class="flex items-center py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <i class="fas fa-tachometer-alt mr-3"></i>
-                                Tableau de bord
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-
-                <!-- Section Interface -->
-                <div class="mb-8">
-                    <h2 class="text-lg font-semibold text-white text-opacity-80 uppercase tracking-wider">Gestion</h2>
-                    <ul class="mt-2">
-                        <li class="mb-1">
-                            <a href="boutiques.php" class="flex items-center justify-between py-2 px-4 glass-effect rounded-lg hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-store mr-3"></i>
-                                    Boutiques
-                                </div>
-                                <span class="bg-white bg-opacity-20 text-xs px-2 py-1 rounded-full"><?php echo count($boutiques); ?></span>
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="categories.php" class="flex items-center justify-between py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-tags mr-3"></i>
-                                    Catégories
-                                </div>
-                                <span class="bg-white bg-opacity-20 text-xs px-2 py-1 rounded-full"><?php echo count($categories); ?></span>
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="membres.php" class="flex items-center justify-between py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-users mr-3"></i>
-                                    Locataires
-                                </div>
-                                <span class="bg-white bg-opacity-20 text-xs px-2 py-1 rounded-full"><?php echo isset($membres_count) ? $membres_count : '0'; ?></span>
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="affectations.php" class="flex items-center justify-between py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-link mr-3"></i>
-                                    Affectations
-                                </div>
-                                <span class="bg-white bg-opacity-20 text-xs px-2 py-1 rounded-full"><?php echo isset($affectations_count) ? $affectations_count : '0'; ?></span>
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="contrats.php" class="flex items-center justify-between py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-file-contract mr-3"></i>
-                                    Contrats
-                                </div>
-                                <span class="bg-white bg-opacity-20 text-xs px-2 py-1 rounded-full"><?php echo isset($contrats_count) ? $contrats_count : '0'; ?></span>
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="paiements.php" class="flex items-center justify-between py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-file-invoice-dollar mr-3"></i>
-                                    Paiements Loyer
-                                </div>
-                                <span class="bg-white bg-opacity-20 text-xs px-2 py-1 rounded-full"><?php echo isset($paiements_count) ? $paiements_count : '0'; ?></span>
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="charges.php" class="flex items-center justify-between py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-money-bill-wave mr-3"></i>
-                                    Charges
-                                </div>
-                                <span class="bg-white bg-opacity-20 text-xs px-2 py-1 rounded-full"><?php echo isset($charges_count) ? $charges_count : '0'; ?></span>
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="paiements_charges.php" class="flex items-center justify-between py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-credit-card mr-3"></i>
-                                    Paiements Charges
-                                </div>
-                                <span class="bg-white bg-opacity-20 text-xs px-2 py-1 rounded-full"><?php echo isset($paiements_charges_count) ? $paiements_charges_count : '0'; ?></span>
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="utilisateurs.php" class="flex items-center justify-between py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-user-cog mr-3"></i>
-                                    Utilisateurs
-                                </div>
-                                <span class="bg-white bg-opacity-20 text-xs px-2 py-1 rounded-full"><?php echo isset($utilisateurs_count) ? $utilisateurs_count : '0'; ?></span>
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="#" class="flex items-center justify-between py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <div class="flex items-center">
-                                    <i class="fas fa-chart-line mr-3"></i>
-                                    Rapports
-                                </div>
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-
-                <!-- Section Addons -->
-                <div class="mb-8">
-                    <h2 class="text-lg font-semibold text-white text-opacity-80 uppercase tracking-wider">Outils</h2>
-                    <ul class="mt-2">
-                        <li class="mb-1">
-                            <a href="#" class="flex items-center py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <i class="fas fa-chart-pie mr-3"></i>
-                                Statistiques
-                            </a>
-                        </li>
-                        <li class="mb-1">
-                            <a href="#" class="flex items-center py-2 px-4 hover:bg-white hover:bg-opacity-10 rounded-lg transition-colors duration-200 hover-lift">
-                                <i class="fas fa-table mr-3"></i>
-                                Documents
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- Pied de page de la barre latérale -->
-            <div class="absolute bottom-0 left-0 right-0 p-4 glass-effect rounded-t-lg">
-                <div class="text-sm text-white text-opacity-70">Connecté en tant que :</div>
-                <div class="font-semibold">Administrateur</div>
-                <div class="text-xs text-white text-opacity-60 mt-1">Dernière connexion : Aujourd'hui</div>
-            </div>
-        </div>
-
-        <!-- Contenu principal -->
-        <div id="mainContent" class="main-content ml-64 p-6 w-full">
-            <!-- En-tête et fil d'Ariane -->
-            <div class="flex justify-between items-center mb-6">
-                <div>
-                    <h1 class="text-2xl font-bold text-gray-800">Gestion des Boutiques</h1>
-                    <div class="flex items-center text-sm text-gray-600 mt-1">
-                        <span class="text-purple-600">Tableau de bord</span>
-                        <i class="fas fa-chevron-right mx-2 text-xs text-purple-400"></i>
-                        <span class="font-medium text-gray-700">Boutiques</span>
+    <div class="flex h-screen">
+        <aside id="sidebar" class="sidebar w-64 gradient-bg text-white flex flex-col fixed inset-y-0 left-0 transform -translate-x-full md:sticky md:top-0 md:h-full md:translate-x-0 transition-transform duration-300 ease-in-out z-50 md:z-auto">
+            <div class="sidebar-header p-6 border-b border-white/10">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center shadow-lg">
+                        <span class="font-bold text-white text-lg font-display">JR</span>
                     </div>
-                </div>
-                <button id="btnAjouter" class="btn-gradient text-white px-4 py-2 rounded-lg flex items-center shadow-lg hover-lift transition-all duration-300">
-                    <i class="fas fa-plus mr-2"></i> Ajouter une boutique
-                </button>
-            </div>
-
-            <!-- Cartes de statistiques -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div class="stat-card text-white rounded-xl p-5 hover-lift">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="text-sm font-medium text-white text-opacity-90">Total boutiques</p>
-                            <p class="text-2xl font-bold mt-1">
-                                <?php echo count($boutiques); ?>
-                            </p>
-                        </div>
-                        <div class="bg-white bg-opacity-20 p-3 rounded-xl">
-                            <i class="fas fa-store text-lg"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl p-5 shadow-lg hover-lift">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="text-sm font-medium text-white text-opacity-90">Boutiques libres</p>
-                            <p class="text-2xl font-bold mt-1">
-                                <?php
-                                $libres = array_filter($boutiques, function ($boutique) {
-                                    return $boutique['etat'] == 'libre' && $boutique['statut'] == 0;
-                                });
-                                echo count($libres);
-                                ?>
-                            </p>
-                        </div>
-                        <div class="bg-white bg-opacity-20 p-3 rounded-xl">
-                            <i class="fas fa-door-open text-lg"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl p-5 shadow-lg hover-lift">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="text-sm font-medium text-white text-opacity-90">Boutiques occupées</p>
-                            <p class="text-2xl font-bold mt-1">
-                                <?php
-                                $occupees = array_filter($boutiques, function ($boutique) {
-                                    return $boutique['etat'] == 'occupée' && $boutique['statut'] == 0;
-                                });
-                                echo count($occupees);
-                                ?>
-                            </p>
-                        </div>
-                        <div class="bg-white bg-opacity-20 p-3 rounded-xl">
-                            <i class="fas fa-door-closed text-lg"></i>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-gradient-to-r from-red-500 to-red-600 text-white rounded-xl p-5 shadow-lg hover-lift">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="text-sm font-medium text-white text-opacity-90">Boutiques inactives</p>
-                            <p class="text-2xl font-bold mt-1">
-                                <?php
-                                $inactives = array_filter($boutiques, function ($boutique) {
-                                    return $boutique['statut'] == 1;
-                                });
-                                echo count($inactives);
-                                ?>
-                            </p>
-                        </div>
-                        <div class="bg-white bg-opacity-20 p-3 rounded-xl">
-                            <i class="fas fa-store-slash text-lg"></i>
-                        </div>
+                    <div>
+                        <h1 class="font-display text-xl font-bold">Julien_Rideau</h1>
+                        <p class="text-xs text-gray-300">Dashboard PDG</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Barre de recherche et filtres -->
-            <div class="bg-white rounded-xl shadow-lg p-6 mb-6 hover-lift">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div class="flex-1">
-                        <div class="relative">
-                            <input type="text" id="searchInput" placeholder="Rechercher une boutique..."
-                                class="w-full px-4 py-3 pl-12 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200">
-                            <i class="fas fa-search absolute left-4 top-3.5 text-gray-400"></i>
-                        </div>
+            <div class="sidebar-profile p-6 border-b border-white/10">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 rounded-full bg-yellow-500/20 border-2 border-yellow-500/30 flex items-center justify-center relative">
+                        <i class="fas fa-crown text-yellow-500 text-lg"></i>
+                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
                     </div>
-                    <div class="flex gap-3">
-                        <select id="etatFilter" class="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200">
-                            <option value="">Tous les états</option>
-                            <option value="libre">Libre</option>
-                            <option value="occupée">Occupée</option>
-                        </select>
-                        <select id="categorieFilter" class="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200">
-                            <option value="">Toutes les catégories</option>
-                            <?php foreach ($categories as $categorie): ?>
-                                <option value="<?php echo $categorie['id']; ?>">
-                                    <?php echo htmlspecialchars($categorie['designation']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <select id="statusFilter" class="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200">
-                            <option value="">Tous les statuts</option>
-                            <option value="actif">Actif</option>
-                            <option value="inactif">Inactif</option>
-                        </select>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-semibold truncate"><?= htmlspecialchars($_SESSION['user_name'] ?? 'PDG') ?></h3>
+                        <p class="text-sm text-gray-300 truncate"><?= htmlspecialchars($_SESSION['user_email'] ?? '') ?></p>
                     </div>
                 </div>
             </div>
 
-            <!-- Tableau des boutiques -->
-            <div class="bg-white rounded-xl shadow-lg overflow-hidden hover-lift">
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gradient-to-r from-gray-50 to-gray-100">
-                            <tr>
-                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Numéro</th>
-                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Surface</th>
-                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">État</th>
-                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Catégorie</th>
-                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Statut</th>
-                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Date création</th>
-                                <th class="px-6 py-4 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="boutiqueTableBody" class="bg-white divide-y divide-gray-200">
-                            <?php foreach ($boutiques as $boutique):
-                                // Trouver le nom de la catégorie
-                                $nomCategorie = 'Non définie';
-                                foreach ($categories as $categorie) {
-                                    if ($categorie['id'] == $boutique['categorie']) {
-                                        $nomCategorie = $categorie['designation'];
-                                        break;
-                                    }
-                                }
-                            ?>
-                                <tr class="hover:bg-purple-50 transition-colors duration-200 boutique-row"
-                                    data-numero="<?php echo htmlspecialchars(strtolower($boutique['numero'])); ?>"
-                                    data-surface="<?php echo htmlspecialchars($boutique['surface']); ?>"
-                                    data-etat="<?php echo htmlspecialchars($boutique['etat']); ?>"
-                                    data-categorie="<?php echo htmlspecialchars($boutique['categorie']); ?>"
-                                    data-status="<?php echo $boutique['statut'] == 0 ? 'actif' : 'inactif'; ?>">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="flex items-center">
-                                            <div class="h-10 w-10 flex-shrink-0 bg-purple-500 rounded-full flex items-center justify-center">
-                                                <span class="text-white font-semibold text-sm">
-                                                    <?php echo strtoupper(substr($boutique['numero'], 0, 2)); ?>
-                                                </span>
+            <nav class="sidebar-nav p-4 space-y-1">
+                <a href="dashboard_pdg.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors relative">
+                    <i class="fas fa-chart-line w-5 text-gray-300"></i>
+                    <span>Tableau de bord</span>
+                </a>
+                <a href="boutiques.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10">
+                    <i class="fas fa-store w-5 text-white"></i>
+                    <span>Boutiques</span>
+                    <span class="notification-badge"><?= $total_boutiques ?></span>
+                </a>
+                <a href="rapports.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
+                    <span>Rapports</span>
+                </a>
+                <a href="produits.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-box w-5 text-gray-300"></i>
+                    <span>Produits</span>
+                </a>
+                <a href="utilisateurs.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-users w-5 text-gray-300"></i>
+                    <span>Utilisateurs</span>
+                </a>
+                <a href="parametres.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-cog w-5 text-gray-300"></i>
+                    <span>Paramètres</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer p-4 border-t border-white/10">
+                <a href="../models/logout.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-red-500/10 text-red-300 hover:text-red-200 transition-colors">
+                    <i class="fas fa-sign-out-alt w-5"></i>
+                    <span>Déconnexion</span>
+                </a>
+            </div>
+        </aside>
+
+        <div class="main-content flex-1 overflow-y-auto">
+            <header class="bg-white border-b border-gray-200 p-4 md:p-6 sticky top-0 z-30 shadow-sm">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h1 class="text-xl md:text-2xl font-bold text-gray-900">Gestion des boutiques</h1>
+                        <p class="text-gray-600 text-sm md:text-base">Gérez les boutiques de votre entreprise</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button onclick="openBoutiqueModal()"
+                            class="px-4 py-3 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
+                            <i class="fas fa-plus"></i>
+                            <span class="hidden md:inline">Nouvelle boutique</span>
+                            <span class="md:hidden">Nouveau</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <main class="p-4 md:p-6">
+                <?php if ($message): ?>
+                    <div class="mb-6 fade-in relative z-10 animate-fade-in">
+                        <div class="
+                    <?php if ($message_type === 'success'): ?>bg-green-50 text-green-700 border border-green-200
+                    <?php elseif ($message_type === 'error'): ?>bg-red-50 text-red-700 border border-red-200
+                    <?php elseif ($message_type === 'warning'): ?>bg-yellow-50 text-yellow-700 border border-yellow-200
+                    <?php else: ?>bg-blue-50 text-blue-700 border border-blue-200<?php endif; ?>
+                    rounded-xl p-4 flex items-center justify-between shadow-soft">
+                            <div class="flex items-center space-x-3">
+                                <?php if ($message_type === 'success'): ?>
+                                    <i class="fas fa-check-circle text-green-600 text-lg"></i>
+                                <?php elseif ($message_type === 'error'): ?>
+                                    <i class="fas fa-exclamation-circle text-red-600 text-lg"></i>
+                                <?php elseif ($message_type === 'warning'): ?>
+                                    <i class="fas fa-exclamation-triangle text-yellow-600 text-lg"></i>
+                                <?php else: ?>
+                                    <i class="fas fa-info-circle text-blue-600 text-lg"></i>
+                                <?php endif; ?>
+                                <span><?= htmlspecialchars($message) ?></span>
+                            </div>
+                            <button onclick="this.parentElement.parentElement.style.display='none'" class="text-gray-400 hover:text-gray-600 transition-colors">
+                                <i class="fas fa-times text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-blue-500 animate-fade-in">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
+                                <i class="fas fa-store text-blue-600 text-xl"></i>
+                            </div>
+                            <span class="text-sm font-medium text-blue-600">Total</span>
+                        </div>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_boutiques ?></h3>
+                        <p class="text-gray-600">Boutiques enregistrées</p>
+                    </div>
+
+                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-green-500 animate-fade-in" style="animation-delay: 0.1s">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
+                                <i class="fas fa-check-circle text-green-600 text-xl"></i>
+                            </div>
+                            <span class="text-sm font-medium text-green-600">Actives</span>
+                        </div>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $active_count_total ?></h3>
+                        <p class="text-gray-600">Boutiques opérationnelles</p>
+                    </div>
+
+                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-red-500 animate-fade-in" style="animation-delay: 0.2s">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center">
+                                <i class="fas fa-times-circle text-red-600 text-xl"></i>
+                            </div>
+                            <span class="text-sm font-medium text-red-600">Inactives</span>
+                        </div>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_boutiques - $active_count_total ?></h3>
+                        <p class="text-gray-600">Boutiques désactivées</p>
+                    </div>
+
+                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-purple-500 animate-fade-in" style="animation-delay: 0.3s">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
+                                <i class="fas fa-file-alt text-purple-600 text-xl"></i>
+                            </div>
+                            <span class="text-sm font-medium text-purple-600">Pagination</span>
+                        </div>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $page ?></h3>
+                        <p class="text-gray-600">sur <?= $totalPages ?> pages</p>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-soft p-6 mb-6 animate-fade-in" style="animation-delay: 0.4s">
+                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div class="relative flex-1 max-w-lg">
+                            <input type="text"
+                                id="searchInput"
+                                placeholder="Rechercher par Nom ou Email..."
+                                class="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-secondary focus:border-secondary transition-all shadow-sm">
+                            <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                        </div>
+
+                        <div class="flex items-center space-x-4">
+                            <div class="text-sm text-gray-600 hidden md:flex items-center space-x-2">
+                                <i class="fas fa-info-circle text-blue-500"></i>
+                                <span>Page <?= $page ?> sur <?= $totalPages ?></span>
+                            </div>
+                            <button onclick="refreshPage()" class="p-2 text-gray-600 hover:text-blue-600 transition-colors" title="Actualiser">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in" style="animation-delay: 0.5s">
+                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                        <h2 class="text-lg font-semibold text-gray-900">Liste des boutiques</h2>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full min-w-[700px]" id="boutiquesTable">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Création</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200" id="tableBody">
+                                <?php foreach ($boutiques as $index => $boutique): ?>
+                                    <tr class="boutique-row hover:bg-gray-50 transition-colors fade-in-row"
+                                        data-boutique-name="<?= htmlspecialchars(strtolower($boutique['nom'])) ?>"
+                                        data-boutique-email="<?= htmlspecialchars(strtolower($boutique['email'])) ?>"
+                                        style="animation-delay: <?= $index * 0.05 ?>s">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#<?= $boutique['id'] ?></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 boutique-name">
+                                            <div class="flex items-center">
+                                                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-3">
+                                                    <i class="fas fa-store text-blue-600 text-xs"></i>
+                                                </div>
+                                                <?= htmlspecialchars($boutique['nom']) ?>
                                             </div>
-                                            <div class="ml-4">
-                                                <div class="text-sm font-medium text-gray-900">
-                                                    <?php echo htmlspecialchars($boutique['numero']); ?>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 boutique-email"><?= htmlspecialchars($boutique['email']) ?></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?= date('d/m/Y', strtotime($boutique['date_creation'])) ?></td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="status-badge <?= $boutique['actif'] ? 'status-active' : 'status-inactive' ?> inline-flex items-center">
+                                                <?php if ($boutique['actif']): ?>
+                                                    <i class="fas fa-circle text-xs mr-1"></i>
+                                                <?php else: ?>
+                                                    <i class="fas fa-circle text-xs mr-1"></i>
+                                                <?php endif; ?>
+                                                <?= $boutique['actif'] ? 'Active' : 'Inactive' ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium relative">
+                                            <div class="relative inline-block text-left">
+                                                <button type="button" 
+                                                        onclick="toggleDropdown(this, event)"
+                                                        class="inline-flex justify-center w-full rounded-lg border border-gray-200 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 focus:ring-secondary transition-all"
+                                                        id="menu-button-<?= $boutique['id'] ?>">
+                                                    <i class="fas fa-ellipsis-v mr-2"></i>
+                                                    Actions
+                                                </button>
+
+                                                <div class="dropdown-menu origin-top-right absolute right-0 mt-2 w-56 rounded-lg shadow-lg bg-white ring-1 ring-black ring-opacity-5 divide-y divide-gray-100 hidden z-10" role="menu" aria-orientation="vertical" aria-labelledby="menu-button-<?= $boutique['id'] ?>">
+                                                    <div class="py-1">
+                                                        <a href="#" onclick="openBoutiqueModal(<?= $boutique['id'] ?>); return false;" 
+                                                           class="text-gray-700 block px-4 py-3 text-sm hover:bg-gray-100 transition-colors flex items-center">
+                                                            <i class="fas fa-edit mr-3 text-blue-500 w-5"></i> 
+                                                            <span>Modifier</span>
+                                                        </a>
+                                                    </div>
+                                                    <div class="py-1">
+                                                        <a href="#" onclick="openToggleModal(<?= $boutique['id'] ?>, '<?= htmlspecialchars(addslashes($boutique['nom'])) ?>', <?= $boutique['actif'] ?>); return false;"
+                                                            class="text-gray-700 block w-full text-left px-4 py-3 text-sm hover:bg-gray-100 transition-colors flex items-center">
+                                                            <i class="fas fa-power-off mr-3 <?= $boutique['actif'] ? 'text-red-500' : 'text-green-500' ?> w-5"></i> 
+                                                            <span><?= $boutique['actif'] ? 'Désactiver' : 'Activer' ?></span>
+                                                        </a>
+                                                    </div>
+                                                    <div class="py-1">
+                                                        <a href="#" onclick="openDeleteModal(<?= $boutique['id'] ?>, '<?= htmlspecialchars(addslashes($boutique['nom'])) ?>'); return false;"
+                                                            class="text-red-600 block w-full text-left px-4 py-3 text-sm hover:bg-red-50 transition-colors flex items-center">
+                                                            <i class="fas fa-trash-alt mr-3 w-5"></i> 
+                                                            <span>Supprimer (Archiver)</span>
+                                                        </a>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-900"><?php echo htmlspecialchars($boutique['surface']); ?> m²</div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                        <?php echo $boutique['etat'] == 'libre' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'; ?>">
-                                            <?php echo $boutique['etat'] == 'libre' ? 'Libre' : 'Occupée'; ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
-                                            <?php echo htmlspecialchars($nomCategorie); ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                        <?php echo $boutique['statut'] == 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'; ?>">
-                                            <?php echo $boutique['statut'] == 0 ? 'Active' : 'Inactive'; ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <?php echo date('d/m/Y', strtotime($boutique['created_at'])); ?>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                        <button class="text-purple-600 hover:text-purple-800 mr-3 edit-boutique transition-colors duration-200"
-                                            data-id="<?php echo $boutique['id']; ?>"
-                                            data-surface="<?php echo htmlspecialchars($boutique['surface']); ?>"
-                                            data-etat="<?php echo htmlspecialchars($boutique['etat']); ?>"
-                                            data-categorie="<?php echo htmlspecialchars($boutique['categorie']); ?>"
-                                            data-statut="<?php echo $boutique['statut']; ?>">
-                                            <i class="fas fa-edit"></i>
-                                        </button>
-                                        <?php if ($boutique['statut'] == 0): ?>
-                                            <button class="text-red-600 hover:text-red-800 delete-boutique transition-colors duration-200"
-                                                data-id="<?php echo $boutique['id']; ?>">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        <?php else: ?>
-                                            <button class="text-green-600 hover:text-green-800 reactiver-boutique transition-colors duration-200"
-                                                data-id="<?php echo $boutique['id']; ?>">
-                                                <i class="fas fa-undo"></i>
-                                            </button>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                <div id="noResults" class="hidden p-8 text-center">
-                    <i class="fas fa-search text-4xl text-gray-300 mb-4"></i>
-                    <h3 class="text-lg font-medium text-gray-700">Aucune boutique trouvée</h3>
-                    <p class="text-gray-500 mt-2">Essayez de modifier vos critères de recherche</p>
-                </div>
-            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
 
-            <!-- Modal pour ajouter/modifier une boutique -->
-            <div id="boutiqueModal" class="fixed inset-0 modal-backdrop overflow-y-auto h-full w-full hidden z-50">
-                <div class="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-2xl rounded-2xl bg-white">
-                    <div class="mt-3">
-                        <!-- En-tête du modal -->
-                        <div class="flex justify-between items-center pb-3 border-b">
-                            <h3 id="modalTitle" class="text-lg font-medium text-gray-900">Ajouter une boutique</h3>
-                            <button id="closeModal" class="text-gray-400 hover:text-gray-500 transition-colors duration-200">
-                                <i class="fas fa-times text-xl"></i>
-                            </button>
+                    <div id="noResults" class="hidden text-center py-12">
+                        <div class="bg-gray-50 rounded-2xl p-8 max-w-md mx-auto shadow-soft">
+                            <i class="fas fa-search text-6xl text-gray-400 mb-4"></i>
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
+                            <p class="text-gray-600">Aucune boutique ne correspond à votre recherche</p>
                         </div>
+                    </div>
 
-                        <!-- Formulaire -->
-                        <form id="boutiqueForm" action="../models/traitement/boutique-post.php" method="POST">
-                            <input type="hidden" id="action" name="action" value="ajouter">
-                            <input type="hidden" id="boutiqueId" name="id" value="">
-
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                                <div class="space-y-4">
-                                    <div>
-                                        <label for="surface" class="block text-sm font-medium text-gray-700">Surface (m²) *</label>
-                                        <input type="number" id="surface" name="surface" step="0.01" min="0" required
-                                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200"
-                                            placeholder="Ex: 25.50">
-                                    </div>
-
-                                    <div>
-                                        <label for="etat" class="block text-sm font-medium text-gray-700">État *</label>
-                                        <select id="etat" name="etat" required
-                                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200">
-                                            <option value="">Sélectionner un état</option>
-                                            <option value="libre">Libre</option>
-                                            <option value="occupée">Occupée</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="space-y-4">
-                                    <div>
-                                        <label for="categorie" class="block text-sm font-medium text-gray-700">Catégorie *</label>
-                                        <select id="categorie" name="categorie" required
-                                            class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-colors duration-200">
-                                            <option value="">Sélectionner une catégorie</option>
-                                            <?php foreach ($categories as $categorie): ?>
-                                                <option value="<?php echo $categorie['id']; ?>">
-                                                    <?php echo htmlspecialchars($categorie['designation']); ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-
-                                    <div class="flex items-center">
-                                        <input type="checkbox" id="statut" name="statut" value="1" class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded">
-                                        <label for="statut" class="ml-2 block text-sm text-gray-700">Boutique inactive</label>
-                                    </div>
-
-                                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mt-4">
-                                        <div class="flex items-center">
-                                            <i class="fas fa-info-circle text-purple-500 mr-2"></i>
-                                            <span class="text-sm text-purple-700">
-                                                Le numéro sera généré automatiquement (ex: B001, Q001) selon la catégorie sélectionnée.
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Actions du modal -->
-                            <div class="flex justify-end space-x-3 pt-4 border-t mt-6">
-                                <button type="button" id="cancelBtn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors duration-200">
-                                    Annuler
-                                </button>
-                                <button type="submit" id="saveBtn" class="btn-gradient text-white px-4 py-2 rounded-lg shadow hover-lift transition-all duration-300">
-                                    Enregistrer
+                    <?php if (empty($boutiques) && $page == 1 && !isset($_GET['msg'])): ?>
+                        <div class="text-center py-12">
+                            <div class="bg-gray-50 rounded-2xl p-8 max-w-md mx-auto shadow-soft">
+                                <i class="fas fa-store text-6xl text-gray-400 mb-4"></i>
+                                <h3 class="text-lg font-medium text-gray-900 mb-2">Aucune boutique enregistrée</h3>
+                                <p class="text-gray-600 mb-4">Commencez par ajouter votre première boutique</p>
+                                <button onclick="openBoutiqueModal()"
+                                    class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 mx-auto shadow-md">
+                                    <i class="fas fa-plus"></i>
+                                    <span>Ajouter une boutique</span>
                                 </button>
                             </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
+                        </div>
+                    <?php endif; ?>
 
-            <!-- Modal de confirmation de suppression -->
-            <div id="deleteModal" class="fixed inset-0 modal-backdrop overflow-y-auto h-full w-full hidden z-50">
-                <div class="relative top-20 mx-auto p-5 border w-full max-w-md shadow-2xl rounded-2xl bg-white">
-                    <div class="mt-3 text-center">
-                        <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
-                            <i class="fas fa-exclamation-triangle text-red-600"></i>
-                        </div>
-                        <h3 class="text-lg leading-6 font-medium text-gray-900 mt-2">Confirmer la suppression</h3>
-                        <div class="mt-2 px-7 py-3">
-                            <p class="text-sm text-gray-500">
-                                Êtes-vous sûr de vouloir désactiver cette boutique ? Elle ne sera plus disponible pour la location.
-                            </p>
-                        </div>
-                        <div class="flex justify-center space-x-3 mt-4">
-                            <button id="cancelDelete" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors duration-200">
-                                Annuler
-                            </button>
-                            <form id="deleteForm" action="../models/traitement/boutique-post.php" method="POST" class="inline">
-                                <input type="hidden" name="action" value="supprimer">
-                                <input type="hidden" name="id" id="deleteBoutiqueId" value="">
-                                <button type="submit" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors duration-200 shadow hover-lift">
-                                    Désactiver
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                    <?php if ($totalPages > 1): ?>
+                        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50">
+                            <div class="flex items-center justify-between">
+                                <div class="text-sm text-gray-700 hidden sm:block">
+                                    Affichage de <span class="font-medium"><?= ($page - 1) * $limit + 1 ?></span> à
+                                    <span class="font-medium"><?= min($page * $limit, $total_boutiques) ?></span> sur
+                                    <span class="font-medium"><?= $total_boutiques ?></span> boutiques
+                                </div>
 
-            <!-- Modal de réactivation -->
-            <div id="reactivateModal" class="fixed inset-0 modal-backdrop overflow-y-auto h-full w-full hidden z-50">
-                <div class="relative top-20 mx-auto p-5 border w-full max-w-md shadow-2xl rounded-2xl bg-white">
-                    <div class="mt-3 text-center">
-                        <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
-                            <i class="fas fa-check text-green-600"></i>
+                                <div class="flex items-center space-x-2 mx-auto sm:mx-0">
+                                    <a href="?page=<?= max(1, $page - 1) ?>"
+                                        class="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors <?= $page <= 1 ? 'opacity-50 pointer-events-none' : '' ?>">
+                                        <i class="fas fa-chevron-left"></i>
+                                    </a>
+
+                                    <?php
+                                    $startPage = max(1, $page - 1);
+                                    $endPage = min($totalPages, $page + 1);
+
+                                    for ($i = $startPage; $i <= $endPage; $i++) {
+                                        $isActive = $i == $page;
+                                    ?>
+                                        <a href="?page=<?= $i ?>"
+                                            class="px-3 py-2 rounded-lg text-sm font-medium transition-colors <?= $isActive ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md' : 'text-gray-700 hover:bg-gray-100 border border-gray-300' ?>">
+                                            <?= $i ?>
+                                        </a>
+                                    <?php } ?>
+
+                                    <a href="?page=<?= min($totalPages, $page + 1) ?>"
+                                        class="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors <?= $page >= $totalPages ? 'opacity-50 pointer-events-none' : '' ?>">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </a>
+                                </div>
+                            </div>
                         </div>
-                        <h3 class="text-lg leading-6 font-medium text-gray-900 mt-2">Confirmer la réactivation</h3>
-                        <div class="mt-2 px-7 py-3">
-                            <p class="text-sm text-gray-500">
-                                Êtes-vous sûr de vouloir réactiver cette boutique ? Elle sera à nouveau disponible pour la location.
-                            </p>
-                        </div>
-                        <div class="flex justify-center space-x-3 mt-4">
-                            <button id="cancelReactivate" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors duration-200">
-                                Annuler
-                            </button>
-                            <form id="reactivateForm" action="../models/traitement/boutique-post.php" method="POST" class="inline">
-                                <input type="hidden" name="action" value="reactiver">
-                                <input type="hidden" name="id" id="reactivateBoutiqueId" value="">
-                                <button type="submit" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors duration-200 shadow hover-lift">
-                                    Réactiver
-                                </button>
-                            </form>
-                        </div>
+                    <?php endif; ?>
+                </div>
+
+            </main>
+        </div>
+    </div>
+    
+    <div id="boutiqueModal" class="modal transition-all duration-300 ease-in-out">
+        <div class="modal-content slide-down p-6">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 class="text-xl font-bold text-gray-900" id="modalTitle">Ajouter une nouvelle boutique</h3>
+                <button onclick="closeBoutiqueModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            
+            <form id="boutiqueForm" method="POST" action="boutiques.php">
+                <input type="hidden" name="id" id="boutiqueId">
+
+                <div class="space-y-4">
+                    <div>
+                        <label for="nom" class="block text-sm font-medium text-gray-700 mb-1">Nom de la boutique</label>
+                        <input type="text" name="nom" id="nom" required
+                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
+                               placeholder="Ex: Boutique Paris Centre">
+                    </div>
+                    <div>
+                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email de connexion</label>
+                        <input type="email" name="email" id="email" required
+                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
+                               placeholder="Ex: contact@boutiqueparis.com">
+                    </div>
+                    <div id="passwordField">
+                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
+                        <input type="password" name="password" id="password"
+                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
+                               placeholder="Laisser vide pour ne pas modifier">
+                        <p class="text-xs text-gray-500 mt-1" id="passwordHint">Requis lors de l'ajout. Laisser vide lors de la modification pour conserver l'ancien.</p>
+                    </div>
+                    
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" name="actif" id="actif" value="1" checked
+                               class="h-4 w-4 text-secondary border-gray-300 rounded focus:ring-secondary">
+                        <label for="actif" class="text-sm font-medium text-gray-700">Boutique active</label>
                     </div>
                 </div>
-            </div>
+
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" onclick="closeBoutiqueModal()"
+                            class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
+                        Annuler
+                    </button>
+                    <button type="submit" name="ajouter_boutique" id="submitButton"
+                            class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
+                        Enregistrer la boutique
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <!-- Ajouter Toastify JS -->
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <div id="toggleModal" class="modal transition-all duration-300 ease-in-out">
+        <div class="modal-content slide-down p-6">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 class="text-xl font-bold text-gray-900" id="toggleModalTitle">Confirmer l'action</h3>
+                <button onclick="closeToggleModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            
+            <div class="text-center py-4">
+                <i id="toggleIcon" class="fas fa-power-off text-5xl mb-4 text-gray-500"></i>
+                <p class="text-lg font-medium text-gray-800 mb-2">Voulez-vous vraiment continuer ?</p>
+                <p class="text-gray-600" id="toggleModalText">Le statut de la boutique **NomBoutique** va être modifié.</p>
+            </div>
+
+            <form id="toggleForm" method="POST" action="boutiques.php" class="mt-6 flex justify-center space-x-3">
+                <input type="hidden" name="id" id="toggleBoutiqueId">
+                <button type="button" onclick="closeToggleModal()"
+                        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
+                    Annuler
+                </button>
+                <button type="submit" name="toggle_actif" id="toggleConfirmButton"
+                        class="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
+                    Confirmer
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="deleteModal" class="modal transition-all duration-300 ease-in-out">
+        <div class="modal-content slide-down p-6">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 class="text-xl font-bold text-gray-900">Confirmation de suppression</h3>
+                <button onclick="closeDeleteModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            
+            <div class="text-center py-4">
+                <i class="fas fa-trash-alt text-5xl mb-4 text-red-500"></i>
+                <p class="text-lg font-bold text-red-700 mb-2">ATTENTION ! Suppression (Archivage)</p>
+                <p class="text-gray-600 mb-4" id="deleteModalText">Vous êtes sur le point d'archiver la boutique **NomBoutique**. Elle ne sera plus visible, mais ses données resteront en base de données (Soft Delete).</p>
+            </div>
+
+            <form id="deleteForm" method="POST" action="boutiques.php" class="mt-6 flex justify-center space-x-3">
+                <input type="hidden" name="id" id="deleteBoutiqueId">
+                <button type="button" onclick="closeDeleteModal()"
+                        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
+                    Annuler
+                </button>
+                <button type="submit" name="supprimer_boutique"
+                        class="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
+                    Oui, Archiver cette boutique
+                </button>
+            </form>
+        </div>
+    </div>
 
     <script>
-        // Vérifie si un message de session est présent
-        <?php if (isset($_SESSION['message'])): ?>
-            Toastify({
-                text: "<?= htmlspecialchars($_SESSION['message']['text']) ?>",
-                duration: 3000,
-                gravity: "top",
-                position: "right",
-                stopOnFocus: true,
-                style: {
-                    background: "linear-gradient(to right, <?= ($_SESSION['message']['type'] == 'success') ? '#22c55e, #16a34a' : '#ef4444, #dc2626' ?>)",
-                },
-                onClick: function() {}
-            }).showToast();
+        // --- GESTION DE LA SIDEBAR MOBILE ---
+        const mobileMenuButton = document.getElementById('mobileMenuButton');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('overlay');
 
-            <?php unset($_SESSION['message']); ?>
-        <?php endif; ?>
+        function toggleSidebar() {
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+            mobileMenuButton.classList.toggle('active');
+        }
 
-        // Éléments du DOM
-        const boutiqueModal = document.getElementById('boutiqueModal');
-        const deleteModal = document.getElementById('deleteModal');
-        const reactivateModal = document.getElementById('reactivateModal');
-        const boutiqueForm = document.getElementById('boutiqueForm');
-        const modalTitle = document.getElementById('modalTitle');
-        const btnAjouter = document.getElementById('btnAjouter');
-        const closeModal = document.getElementById('closeModal');
-        const cancelBtn = document.getElementById('cancelBtn');
-        const cancelDelete = document.getElementById('cancelDelete');
-        const cancelReactivate = document.getElementById('cancelReactivate');
-        const actionInput = document.getElementById('action');
-        const boutiqueIdInput = document.getElementById('boutiqueId');
-        const deleteBoutiqueIdInput = document.getElementById('deleteBoutiqueId');
-        const reactivateBoutiqueIdInput = document.getElementById('reactivateBoutiqueId');
-        const searchInput = document.getElementById('searchInput');
-        const etatFilter = document.getElementById('etatFilter');
-        const categorieFilter = document.getElementById('categorieFilter');
-        const statusFilter = document.getElementById('statusFilter');
-        const boutiqueTableBody = document.getElementById('boutiqueTableBody');
-        const noResults = document.getElementById('noResults');
+        mobileMenuButton.addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
 
-        // Variables pour la gestion des actions
-        let currentBoutiqueId = null;
-
-        // Initialisation
-        document.addEventListener('DOMContentLoaded', function() {
-            setupEventListeners();
-            setupSearchAndFilters();
-            setupSidebarToggle();
+        // --- DÉTECTION DU SCROLL DANS LA SIDEBAR ---
+        const sidebarNav = document.querySelector('.sidebar-nav');
+        
+        sidebarNav.addEventListener('scroll', function() {
+            if (this.scrollTop > 10) {
+                this.classList.add('scrolling');
+            } else {
+                this.classList.remove('scrolling');
+            }
         });
 
-        // Configurer le toggle de la sidebar
-        function setupSidebarToggle() {
-            const sidebarToggle = document.getElementById('sidebarToggle');
-            const sidebar = document.getElementById('sidebar');
-            const mainContent = document.getElementById('mainContent');
-            
-            if (sidebarToggle && sidebar && mainContent) {
-                sidebarToggle.addEventListener('click', function() {
-                    sidebar.classList.toggle('collapsed');
-                    mainContent.classList.toggle('ml-64');
-                    mainContent.classList.toggle('ml-0');
-                });
+        // --- GESTION DES LIENS ACTIFS ---
+        const currentPage = window.location.pathname.split('/').pop();
+        const navLinks = document.querySelectorAll('.nav-link');
+        
+        navLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            if (href === currentPage) {
+                link.classList.add('active');
+            } else {
+                link.classList.remove('active');
             }
+        });
 
-            // Toggle du menu utilisateur
-            const userMenuButton = document.getElementById('userMenuButton');
-            const userMenu = document.getElementById('userMenu');
-            
-            if (userMenuButton && userMenu) {
-                userMenuButton.addEventListener('click', function() {
-                    userMenu.classList.toggle('hidden');
-                });
+        // --- AMÉLIORATION DU COMPORTEMENT DES LIENS ---
+        navLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                // Fermer la sidebar sur mobile après clic
+                if (window.innerWidth < 768) {
+                    setTimeout(() => {
+                        toggleSidebar();
+                    }, 200);
+                }
+            });
+        });
 
-                // Fermer le menu utilisateur en cliquant ailleurs
-                document.addEventListener('click', function(event) {
-                    if (!userMenuButton.contains(event.target) && !userMenu.contains(event.target)) {
-                        userMenu.classList.add('hidden');
-                    }
-                });
-            }
+        // --- GESTION DU SCROLL RESTAURATION ---
+        if ('scrollRestoration' in history) {
+            history.scrollRestoration = 'manual';
         }
 
-        // Configurer les écouteurs d'événements
-        function setupEventListeners() {
-            // Bouton pour ajouter une boutique
-            btnAjouter.addEventListener('click', function() {
-                showModal();
-            });
-
-            // Fermer le modal
-            closeModal.addEventListener('click', hideModal);
-            cancelBtn.addEventListener('click', hideModal);
-
-            // Fermer le modal de suppression
-            cancelDelete.addEventListener('click', hideDeleteModal);
-
-            // Fermer le modal de réactivation
-            cancelReactivate.addEventListener('click', hideReactivateModal);
-
-            // Boutons d'édition
-            document.querySelectorAll('.edit-boutique').forEach(button => {
-                button.addEventListener('click', function() {
-                    const boutiqueId = this.getAttribute('data-id');
-                    const surface = this.getAttribute('data-surface');
-                    const etat = this.getAttribute('data-etat');
-                    const categorie = this.getAttribute('data-categorie');
-                    const statut = this.getAttribute('data-statut');
-
-                    editBoutique(boutiqueId, surface, etat, categorie, statut);
-                });
-            });
-
-            // Boutons de suppression
-            document.querySelectorAll('.delete-boutique').forEach(button => {
-                button.addEventListener('click', function() {
-                    const boutiqueId = this.getAttribute('data-id');
-                    showDeleteModal(boutiqueId);
-                });
-            });
-
-            // Boutons de réactivation
-            document.querySelectorAll('.reactiver-boutique').forEach(button => {
-                button.addEventListener('click', function() {
-                    const boutiqueId = this.getAttribute('data-id');
-                    showReactivateModal(boutiqueId);
-                });
-            });
-
-            // Validation du formulaire
-            boutiqueForm.addEventListener('submit', function(e) {
+        // --- NAVIGATION CLAVIER ---
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+B ou Cmd+B pour ouvrir/fermer la sidebar
+            if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
                 e.preventDefault();
+                toggleSidebar();
+            }
+            
+            // Échap pour fermer la sidebar
+            if (e.key === 'Escape' && !sidebar.classList.contains('-translate-x-full')) {
+                toggleSidebar();
+            }
+            
+            // Ctrl+F pour focus la recherche
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                document.getElementById('searchInput').focus();
+            }
+        });
 
-                const surface = document.getElementById('surface').value;
-                const etat = document.getElementById('etat').value;
-                const categorie = document.getElementById('categorie').value;
-
-                let errors = [];
-
-                if (!surface || surface <= 0) {
-                    errors.push('La surface doit être un nombre positif');
-                }
-
-                if (!etat) {
-                    errors.push('L\'état est obligatoire');
-                }
-
-                if (!categorie) {
-                    errors.push('La catégorie est obligatoire');
-                }
-
-                if (errors.length > 0) {
-                    Toastify({
-                        text: "Erreurs: " + errors.join(', '),
-                        duration: 5000,
-                        gravity: "top",
-                        position: "right",
-                        style: {
-                            background: "linear-gradient(to right, #ef4444, #dc2626)",
-                        },
-                    }).showToast();
-                    return;
-                }
-
-                // Soumission du formulaire si validation OK
-                this.submit();
-            });
-
-            // Fermer les modales en cliquant en dehors
-            document.addEventListener('click', function(event) {
-                if (event.target === boutiqueModal) {
-                    hideModal();
-                }
-                if (event.target === deleteModal) {
-                    hideDeleteModal();
-                }
-                if (event.target === reactivateModal) {
-                    hideReactivateModal();
-                }
-            });
-
-            // Gestion des touches pour fermer les modales avec ESC
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape') {
-                    if (!boutiqueModal.classList.contains('hidden')) {
-                        hideModal();
-                    }
-                    if (!deleteModal.classList.contains('hidden')) {
-                        hideDeleteModal();
-                    }
-                    if (!reactivateModal.classList.contains('hidden')) {
-                        hideReactivateModal();
-                    }
-                }
-            });
+        // --- AUTO-HIDE DE LA SCROLLBAR QUAND PAS BESOIN ---
+        function checkSidebarScroll() {
+            const nav = document.querySelector('.sidebar-nav');
+            if (nav.scrollHeight <= nav.clientHeight) {
+                nav.style.overflowY = 'hidden';
+            } else {
+                nav.style.overflowY = 'auto';
+            }
         }
 
-        // Configurer la recherche et les filtres
-        function setupSearchAndFilters() {
-            searchInput.addEventListener('input', filterBoutiques);
-            etatFilter.addEventListener('change', filterBoutiques);
-            categorieFilter.addEventListener('change', filterBoutiques);
-            statusFilter.addEventListener('change', filterBoutiques);
+        window.addEventListener('load', checkSidebarScroll);
+        window.addEventListener('resize', checkSidebarScroll);
+
+        // --- SMOOTH SCROLL POUR LA SIDEBAR ---
+        sidebarNav.style.scrollBehavior = 'smooth';
+
+        // --- GESTION DE LA MODALE AJOUT/MODIF ---
+        const boutiqueModal = document.getElementById('boutiqueModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const boutiqueForm = document.getElementById('boutiqueForm');
+        const submitButton = document.getElementById('submitButton');
+        const boutiqueId = document.getElementById('boutiqueId');
+        const passwordInput = document.getElementById('password');
+        const passwordHint = document.getElementById('passwordHint');
+
+        function openBoutiqueModal(id = null) {
+            boutiqueForm.reset();
+            
+            if (id) {
+                // Mode Modification
+                modalTitle.textContent = "Modifier la boutique #" + id;
+                submitButton.textContent = "Modifier la boutique";
+                boutiqueId.value = id;
+                submitButton.name = 'modifier_boutique';
+                passwordInput.required = false; 
+                passwordHint.textContent = "Laisser vide pour conserver le mot de passe actuel.";
+
+                fetch('boutiques.php?action=get_boutique&id=' + id)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            document.getElementById('nom').value = data.boutique.nom;
+                            document.getElementById('email').value = data.boutique.email;
+                            document.getElementById('actif').checked = data.boutique.actif == 1;
+                        } else {
+                            alert(data.message);
+                            closeBoutiqueModal();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erreur AJAX:', error);
+                        alert("Impossible de charger les données de la boutique.");
+                        closeBoutiqueModal();
+                    });
+
+            } else {
+                // Mode Ajout
+                modalTitle.textContent = "Ajouter une nouvelle boutique";
+                submitButton.textContent = "Enregistrer la boutique";
+                boutiqueId.value = '';
+                submitButton.name = 'ajouter_boutique';
+                passwordInput.required = true; 
+                passwordHint.textContent = "Requis lors de l'ajout.";
+                document.getElementById('actif').checked = true;
+            }
+
+            boutiqueModal.classList.add('show');
         }
 
-        // Filtrer les boutiques
-        function filterBoutiques() {
-            const searchTerm = searchInput.value.toLowerCase();
-            const etatFilterValue = etatFilter.value;
-            const categorieFilterValue = categorieFilter.value;
-            const statusFilterValue = statusFilter.value;
+        function closeBoutiqueModal() {
+            boutiqueModal.classList.remove('show');
+        }
 
+        // --- GESTION DE LA MODALE TOGGLE ---
+        const toggleModal = document.getElementById('toggleModal');
+        const toggleModalTitle = document.getElementById('toggleModalTitle');
+        const toggleModalText = document.getElementById('toggleModalText');
+        const toggleIcon = document.getElementById('toggleIcon');
+        const toggleBoutiqueId = document.getElementById('toggleBoutiqueId');
+        const toggleConfirmButton = document.getElementById('toggleConfirmButton');
+
+        function openToggleModal(id, nom, actif) {
+            const action = actif ? 'désactiver' : 'activer';
+            const iconClass = actif ? 'text-red-500' : 'text-green-500';
+            const buttonColor = actif ? 'bg-gradient-to-r from-red-600 to-red-700' : 'bg-gradient-to-r from-green-600 to-green-700';
+            const buttonText = actif ? 'Oui, Désactiver' : 'Oui, Activer';
+
+            toggleModalTitle.textContent = "Confirmer la " + action;
+            toggleModalText.innerHTML = `Le statut de la boutique <strong>${nom}</strong> va passer à <strong>${action}</strong>.<br>Voulez-vous confirmer cette action ?`;
+            
+            toggleIcon.className = `fas fa-power-off text-5xl mb-4 ${iconClass}`;
+            
+            toggleConfirmButton.textContent = buttonText;
+            toggleConfirmButton.className = `px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md ${buttonColor}`;
+
+            toggleBoutiqueId.value = id;
+            toggleModal.classList.add('show');
+        }
+
+        function closeToggleModal() {
+            toggleModal.classList.remove('show');
+        }
+
+        // --- GESTION DE LA MODALE DELETE ---
+        const deleteModal = document.getElementById('deleteModal');
+        const deleteModalText = document.getElementById('deleteModalText');
+        const deleteBoutiqueId = document.getElementById('deleteBoutiqueId');
+
+        function openDeleteModal(id, nom) {
+            deleteModalText.innerHTML = `Vous êtes sur le point d'archiver la boutique <strong>${nom}</strong>. Elle ne sera plus visible, mais ses données resteront en base de données (Soft Delete). Cette action est réversible uniquement par un administrateur système. Confirmez-vous ?`;
+            deleteBoutiqueId.value = id;
+            deleteModal.classList.add('show');
+        }
+
+        function closeDeleteModal() {
+            deleteModal.classList.remove('show');
+        }
+
+        // --- GESTION DE LA RECHERCHE ---
+        document.getElementById('searchInput').addEventListener('keyup', function() {
+            const searchTerm = this.value.toLowerCase();
             const rows = document.querySelectorAll('.boutique-row');
-            let visibleCount = 0;
+            let found = false;
 
             rows.forEach(row => {
-                const numero = row.getAttribute('data-numero');
-                const etat = row.getAttribute('data-etat');
-                const categorie = row.getAttribute('data-categorie');
-                const status = row.getAttribute('data-status');
+                const name = row.dataset.boutiqueName;
+                const email = row.dataset.boutiqueEmail;
 
-                const matchesSearch = numero.includes(searchTerm);
-                const matchesEtat = !etatFilterValue || etat === etatFilterValue;
-                const matchesCategorie = !categorieFilterValue || categorie === categorieFilterValue;
-                const matchesStatus = !statusFilterValue || status === statusFilterValue;
-
-                if (matchesSearch && matchesEtat && matchesCategorie && matchesStatus) {
+                if (name.includes(searchTerm) || email.includes(searchTerm)) {
                     row.style.display = '';
-                    visibleCount++;
+                    found = true;
                 } else {
                     row.style.display = 'none';
                 }
             });
 
-            // Afficher/masquer le message "Aucun résultat"
-            if (visibleCount === 0) {
-                noResults.classList.remove('hidden');
-                boutiqueTableBody.style.display = 'none';
-            } else {
-                noResults.classList.add('hidden');
-                boutiqueTableBody.style.display = '';
+            document.getElementById('noResults').classList.toggle('hidden', found);
+            document.getElementById('tableBody').classList.toggle('hidden', !found && searchTerm !== '');
+        });
+
+        // --- GESTION DES DROPDOWNS ---
+        let openDropdown = null;
+
+        function closeAllDropdowns() {
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                menu.classList.add('hidden');
+            });
+            if (openDropdown) {
+                openDropdown = null;
             }
         }
 
-        // Afficher le modal d'ajout/modification
-        function showModal(boutique = null) {
-            if (boutique) {
-                // Mode édition
-                modalTitle.textContent = 'Modifier la boutique';
-                actionInput.value = 'modifier';
-                boutiqueIdInput.value = boutique.id;
-                document.getElementById('surface').value = boutique.surface;
-                document.getElementById('etat').value = boutique.etat;
-                document.getElementById('categorie').value = boutique.categorie;
-                document.getElementById('statut').checked = boutique.statut == 1;
-
-                currentBoutiqueId = boutique.id;
-            } else {
-                // Mode ajout
-                modalTitle.textContent = 'Ajouter une boutique';
-                actionInput.value = 'ajouter';
-                boutiqueForm.reset();
-                boutiqueIdInput.value = '';
-                currentBoutiqueId = null;
+        function toggleDropdown(button, event) {
+            const menu = button.nextElementSibling;
+            
+            if (openDropdown && openDropdown !== menu) {
+                closeAllDropdowns();
             }
 
-            boutiqueModal.classList.remove('hidden');
+            menu.classList.toggle('hidden');
+            openDropdown = menu.classList.contains('hidden') ? null : menu;
+
+            event.stopPropagation();
         }
 
-        // Masquer le modal d'ajout/modification
-        function hideModal() {
-            boutiqueModal.classList.add('hidden');
+        document.addEventListener('click', closeAllDropdowns);
+
+        // --- FONCTION DE RAFRAÎCHISSEMENT ---
+        function refreshPage() {
+            const button = event.target.closest('button');
+            button.classList.add('animate-spin');
+            setTimeout(() => {
+                button.classList.remove('animate-spin');
+                window.location.reload();
+            }, 500);
         }
 
-        // Afficher le modal de confirmation de suppression
-        function showDeleteModal(boutiqueId) {
-            deleteBoutiqueIdInput.value = boutiqueId;
-            deleteModal.classList.remove('hidden');
-        }
+        // --- ANIMATION DES LIGNES AU CHARGEMENT ---
+        document.addEventListener('DOMContentLoaded', function() {
+            const rows = document.querySelectorAll('.fade-in-row');
+            rows.forEach((row, index) => {
+                row.style.animationDelay = `${index * 0.05}s`;
+            });
+        });
 
-        // Masquer le modal de confirmation de suppression
-        function hideDeleteModal() {
-            deleteModal.classList.add('hidden');
-        }
+        // --- GESTION DES EFFETS VISUELS ---
+        document.querySelectorAll('.stats-card, .nav-link').forEach(element => {
+            element.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-3px)';
+            });
+            
+            element.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+            });
+        });
 
-        // Afficher le modal de confirmation de réactivation
-        function showReactivateModal(boutiqueId) {
-            reactivateBoutiqueIdInput.value = boutiqueId;
-            reactivateModal.classList.remove('hidden');
-        }
+        // --- DÉTECTION DE LA CONNEXION ---
+        window.addEventListener('online', function() {
+            showNotification('Vous êtes reconnecté à internet', 'success');
+        });
 
-        // Masquer le modal de confirmation de réactivation
-        function hideReactivateModal() {
-            reactivateModal.classList.add('hidden');
-        }
+        window.addEventListener('offline', function() {
+            showNotification('Vous êtes hors ligne', 'warning');
+        });
 
-        // Éditer une boutique
-        function editBoutique(boutiqueId, surface, etat, categorie, statut) {
-            const boutique = {
-                id: boutiqueId,
-                surface: surface,
-                etat: etat,
-                categorie: categorie,
-                statut: statut
-            };
-            showModal(boutique);
+        function showNotification(message, type) {
+            const notification = document.createElement('div');
+            notification.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg text-white z-50 animate-fade-in ${
+                type === 'success' ? 'bg-green-500' : 'bg-yellow-500'
+            }`;
+            notification.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
         }
     </script>
 </body>
-
 </html>

@@ -1,0 +1,23 @@
+
+CREATE TABLE boutiques (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    nom VARCHAR(100) NOT NULL,
+    email VARCHAR(100),
+    password varchar (100),
+    statut int,-- il est 0 par defaut, Le statut change à 1 quand on supprime une boutique 
+    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+    actif BOOLEAN DEFAULT TRUE
+);
+
+
+
+CREATE TABLE utilisateurs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    nom_utilisateur VARCHAR(50) UNIQUE NOT NULL,
+    mot_de_passe VARCHAR(255) NOT NULL,
+    role ENUM('PDG', 'IT') NOT NULL,
+    email VARCHAR(100),
+    statut int,-- il est 0 par defaut, Le statut change à 1 quand on supprime un utilisateur 
+    actif BOOLEAN DEFAULT TRUE,
+    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP
+);

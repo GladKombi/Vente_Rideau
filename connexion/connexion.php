@@ -4,7 +4,7 @@
 $servername = "localhost";
 $username = "root";
 $password = "";
-$dbname = "gestion_loyer";
+$dbname = "vente_rideau";
 # Paramètres de connexion en ligne
 // $servername = "";
 // $username = "";

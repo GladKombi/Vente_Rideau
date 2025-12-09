@@ -23,6 +23,12 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #FFFFFF;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        
+        body.dark-mode {
+            background-color: #0F172A;
+            color: #E2E8F0;
         }
         
         .font-display {
@@ -31,6 +37,10 @@
         
         .gradient-bg {
             background: linear-gradient(135deg, #0A2540 0%, #1E3A5F 100%);
+        }
+        
+        .dark-mode .gradient-bg {
+            background: linear-gradient(135deg, #1E293B 0%, #334155 100%);
         }
         
         .gradient-accent {
@@ -54,12 +64,20 @@
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
         }
         
+        .dark-mode .shadow-soft {
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+        
         .shadow-hover {
             transition: box-shadow 0.3s ease;
         }
         
         .shadow-hover:hover {
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+        }
+        
+        .dark-mode .shadow-hover:hover {
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
         }
         
         .hover-lift {
@@ -85,11 +103,110 @@
                 linear-gradient(90deg, rgba(10, 37, 64, 0.03) 1px, transparent 1px);
             background-size: 50px 50px;
         }
+        
+        .dark-mode .grid-pattern {
+            background-image: 
+                linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+        }
+        
+        /* Mode sombre spécifique */
+        .dark-mode .bg-gray-50 {
+            background-color: #1E293B;
+        }
+        
+        .dark-mode .bg-white {
+            background-color: #334155;
+        }
+        
+        .dark-mode .text-gray-800 {
+            color: #E2E8F0;
+        }
+        
+        .dark-mode .text-gray-600 {
+            color: #94A3B8;
+        }
+        
+        .dark-mode .text-gray-500 {
+            color: #94A3B8;
+        }
+        
+        .dark-mode .text-gray-900 {
+            color: #F1F5F9;
+        }
+        
+        .dark-mode .border-gray-100 {
+            border-color: #334155;
+        }
+        
+        .dark-mode .bg-gray-800 {
+            background-color: #1E293B;
+        }
+        
+        .dark-mode .bg-gray-900 {
+            background-color: #0F172A;
+        }
+        
+        .dark-mode .bg-gray-950 {
+            background-color: #0A0F1C;
+        }
+        
+        .dark-mode .border-gray-700 {
+            border-color: #475569;
+        }
+        
+        .dark-mode .border-gray-800 {
+            border-color: #475569;
+        }
+        
+        /* Bouton mode sombre */
+        .theme-toggle {
+            position: relative;
+            width: 60px;
+            height: 30px;
+            border-radius: 50px;
+            background: linear-gradient(135deg, #7B61FF 0%, #00D4AA 100%);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .theme-toggle::before {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+        
+        .dark-mode .theme-toggle::before {
+            transform: translateX(30px);
+        }
+        
+        .theme-toggle i {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+        }
+        
+        .theme-toggle .fa-sun {
+            left: 8px;
+            color: white;
+        }
+        
+        .theme-toggle .fa-moon {
+            right: 8px;
+            color: white;
+        }
     </style>
 </head>
 <body class="text-gray-800 bg-white overflow-x-hidden">
     <!-- Navigation Minimaliste -->
-    <header class="fixed w-full z-50 py-4 px-6 bg-white/90 backdrop-blur-md">
+    <header class="fixed w-full z-50 py-4 px-6 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md">
         <div class="max-w-7xl mx-auto">
             <div class="flex justify-between items-center">
                 <!-- Logo -->
@@ -98,34 +215,48 @@
                         <span class="font-bold text-white text-lg">JR</span>
                     </div>
                     <div>
-                        <h1 class="font-display text-xl font-bold text-gray-900">Julien_Rideau</h1>
-                        <p class="text-xs text-gray-500">depuis 1995</p>
+                        <h1 class="font-display text-xl font-bold text-gray-900 dark:text-white">Julien_Rideau</h1>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">depuis 1995</p>
                     </div>
                 </div>
                 
                 <!-- Menu Desktop -->
                 <nav class="hidden lg:flex items-center space-x-10">
-                    <a href="#" class="text-gray-700 hover:text-gray-900 font-medium transition">Accueil</a>
-                    <a href="#produits" class="text-gray-700 hover:text-gray-900 font-medium transition">Collection</a>
-                    <a href="#services" class="text-gray-700 hover:text-gray-900 font-medium transition">Services</a>
-                    <a href="#boutiques" class="text-gray-700 hover:text-gray-900 font-medium transition">Boutiques</a>
-                    <a href="#contact" class="px-5 py-2 bg-gray-900 text-white rounded-full font-medium hover:bg-gray-800 transition">Contact</a>
+                    <a href="#" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Accueil</a>
+                    <a href="#produits" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Collection</a>
+                    <a href="#services" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Services</a>
+                    <a href="#boutiques" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Boutiques</a>
+                    <a href="#contact" class="px-5 py-2 bg-gray-900 dark:bg-gray-800 text-white rounded-full font-medium hover:bg-gray-800 dark:hover:bg-gray-700 transition">Contact</a>
+                    
+                    <!-- Bouton mode sombre -->
+                    <div class="theme-toggle ml-4" id="theme-toggle">
+                        <i class="fas fa-sun"></i>
+                        <i class="fas fa-moon"></i>
+                    </div>
                 </nav>
                 
-                <!-- Menu Mobile Toggle -->
-                <button id="menu-toggle" class="lg:hidden text-gray-700">
-                    <i class="fas fa-bars text-xl"></i>
-                </button>
+                <div class="flex items-center space-x-4 lg:hidden">
+                    <!-- Bouton mode sombre mobile -->
+                    <div class="theme-toggle" id="theme-toggle-mobile">
+                        <i class="fas fa-sun"></i>
+                        <i class="fas fa-moon"></i>
+                    </div>
+                    
+                    <!-- Menu Mobile Toggle -->
+                    <button id="menu-toggle" class="text-gray-700 dark:text-gray-300">
+                        <i class="fas fa-bars text-xl"></i>
+                    </button>
+                </div>
             </div>
             
             <!-- Menu Mobile -->
-            <div id="mobile-menu" class="hidden lg:hidden mt-4 pb-4 border-t border-gray-100">
+            <div id="mobile-menu" class="hidden lg:hidden mt-4 pb-4 border-t border-gray-100 dark:border-gray-800">
                 <div class="flex flex-col space-y-4 pt-4">
-                    <a href="#" class="text-gray-700 hover:text-gray-900 font-medium">Accueil</a>
-                    <a href="#produits" class="text-gray-700 hover:text-gray-900 font-medium">Collection</a>
-                    <a href="#services" class="text-gray-700 hover:text-gray-900 font-medium">Services</a>
-                    <a href="#boutiques" class="text-gray-700 hover:text-gray-900 font-medium">Boutiques</a>
-                    <a href="#contact" class="text-gray-700 hover:text-gray-900 font-medium">Contact</a>
+                    <a href="#" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Accueil</a>
+                    <a href="#produits" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Collection</a>
+                    <a href="#services" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Services</a>
+                    <a href="#boutiques" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Boutiques</a>
+                    <a href="#contact" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Contact</a>
                 </div>
             </div>
         </div>
@@ -181,17 +312,17 @@
                     </div>
                     
                     <!-- Floating card -->
-                    <div class="absolute -bottom-6 -left-6 bg-white rounded-2xl p-6 shadow-soft w-64">
+                    <div class="absolute -bottom-6 -left-6 bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-soft w-64">
                         <div class="flex items-center mb-4">
                             <div class="w-12 h-12 rounded-full gradient-accent flex items-center justify-center">
                                 <i class="fas fa-star text-white"></i>
                             </div>
                             <div class="ml-4">
-                                <div class="font-bold text-gray-900">4.9/5</div>
-                                <div class="text-sm text-gray-500">Avis clients</div>
+                                <div class="font-bold text-gray-900 dark:text-white">4.9/5</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400">Avis clients</div>
                             </div>
                         </div>
-                        <p class="text-gray-600 text-sm">"Excellente réalisation, un travail d'une précision remarquable."</p>
+                        <p class="text-gray-600 dark:text-gray-300 text-sm">"Excellente réalisation, un travail d'une précision remarquable."</p>
                     </div>
                 </div>
             </div>
@@ -199,53 +330,53 @@
     </section>
 
     <!-- Collection Produits -->
-    <section id="produits" class="py-20 bg-gray-50">
+    <section id="produits" class="py-20 bg-gray-50 dark:bg-gray-900">
         <div class="max-w-7xl mx-auto px-6">
             <div class="text-center mb-16">
-                <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6">
+                <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6 dark:text-white">
                     Collection <span class="gradient-text">Signature</span>
                 </h2>
-                <p class="text-gray-600 text-lg max-w-2xl mx-auto">
+                <p class="text-gray-600 dark:text-gray-300 text-lg max-w-2xl mx-auto">
                     Des pièces uniques conçues avec des matériaux d'exception, pour des intérieurs d'exception.
                 </p>
             </div>
             
             <!-- Filtres Minimalistes -->
             <div class="flex flex-wrap justify-center gap-3 mb-12">
-                <button class="px-5 py-2 bg-gray-900 text-white rounded-full font-medium">Tout voir</button>
-                <button class="px-5 py-2 bg-white text-gray-700 rounded-full font-medium shadow-soft hover:shadow-hover transition">Luxe</button>
-                <button class="px-5 py-2 bg-white text-gray-700 rounded-full font-medium shadow-soft hover:shadow-hover transition">Minimaliste</button>
-                <button class="px-5 py-2 bg-white text-gray-700 rounded-full font-medium shadow-soft hover:shadow-hover transition">Naturel</button>
-                <button class="px-5 py-2 bg-white text-gray-700 rounded-full font-medium shadow-soft hover:shadow-hover transition">Sur mesure</button>
+                <button class="px-5 py-2 bg-gray-900 dark:bg-gray-800 text-white rounded-full font-medium">Tout voir</button>
+                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Luxe</button>
+                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Minimaliste</button>
+                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Naturel</button>
+                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Sur mesure</button>
             </div>
             
             <!-- Grille Produits Moderne -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <!-- Produit 1 -->
-                <div class="group bg-white rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in">
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in">
                     <div class="h-64 overflow-hidden relative">
                         <img src="https://images.unsplash.com/photo-1616046229478-9901c5536a45?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1760&q=80" 
                              alt="Rideaux en lin" 
                              class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
                         <div class="absolute top-4 right-4">
-                            <span class="px-3 py-1 bg-white/90 backdrop-blur-sm rounded-full text-sm font-medium">Nouveau</span>
+                            <span class="px-3 py-1 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-full text-sm font-medium dark:text-white">Nouveau</span>
                         </div>
                     </div>
                     <div class="p-8">
                         <div class="flex justify-between items-start mb-4">
                             <div>
-                                <h3 class="font-bold text-xl mb-1">Collection Lin</h3>
-                                <p class="text-gray-500">Tissu naturel et respirant</p>
+                                <h3 class="font-bold text-xl mb-1 dark:text-white">Collection Lin</h3>
+                                <p class="text-gray-500 dark:text-gray-400">Tissu naturel et respirant</p>
                             </div>
-                            <span class="font-bold text-2xl">€289</span>
+                            <span class="font-bold text-2xl dark:text-white">€289</span>
                         </div>
-                        <p class="text-gray-600 mb-6">Lin français de haute qualité, tissé artisanalement pour une texture unique.</p>
+                        <p class="text-gray-600 dark:text-gray-300 mb-6">Lin français de haute qualité, tissé artisanalement pour une texture unique.</p>
                         <div class="flex justify-between items-center">
-                            <div class="flex items-center text-gray-500">
+                            <div class="flex items-center text-gray-500 dark:text-gray-400">
                                 <i class="fas fa-palette mr-2"></i>
                                 <span class="text-sm">12 coloris</span>
                             </div>
-                            <button class="px-5 py-2 border-2 border-gray-900 text-gray-900 rounded-full font-medium hover:bg-gray-900 hover:text-white transition">
+                            <button class="px-5 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition">
                                 Découvrir
                             </button>
                         </div>
@@ -253,7 +384,7 @@
                 </div>
                 
                 <!-- Produit 2 -->
-                <div class="group bg-white rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in" style="animation-delay: 0.1s">
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in" style="animation-delay: 0.1s">
                     <div class="h-64 overflow-hidden relative">
                         <img src="https://images.unsplash.com/photo-1586023492125-27b2c045efd7?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1760&q=80" 
                              alt="Stores japonais" 
@@ -262,18 +393,18 @@
                     <div class="p-8">
                         <div class="flex justify-between items-start mb-4">
                             <div>
-                                <h3 class="font-bold text-xl mb-1">Stores Japonais</h3>
-                                <p class="text-gray-500">Élégance et minimalisme</p>
+                                <h3 class="font-bold text-xl mb-1 dark:text-white">Stores Japonais</h3>
+                                <p class="text-gray-500 dark:text-gray-400">Élégance et minimalisme</p>
                             </div>
-                            <span class="font-bold text-2xl">€349</span>
+                            <span class="font-bold text-2xl dark:text-white">€349</span>
                         </div>
-                        <p class="text-gray-600 mb-6">Design épuré, matériaux nobles. Contrôle précis de la lumière naturelle.</p>
+                        <p class="text-gray-600 dark:text-gray-300 mb-6">Design épuré, matériaux nobles. Contrôle précis de la lumière naturelle.</p>
                         <div class="flex justify-between items-center">
-                            <div class="flex items-center text-gray-500">
+                            <div class="flex items-center text-gray-500 dark:text-gray-400">
                                 <i class="fas fa-ruler-combined mr-2"></i>
                                 <span class="text-sm">Sur mesure</span>
                             </div>
-                            <button class="px-5 py-2 border-2 border-gray-900 text-gray-900 rounded-full font-medium hover:bg-gray-900 hover:text-white transition">
+                            <button class="px-5 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition">
                                 Découvrir
                             </button>
                         </div>
@@ -281,7 +412,7 @@
                 </div>
                 
                 <!-- Produit 3 -->
-                <div class="group bg-white rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in" style="animation-delay: 0.2s">
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in" style="animation-delay: 0.2s">
                     <div class="h-64 overflow-hidden relative">
                         <img src="https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1770&q=80" 
                              alt="Voilages légers" 
@@ -293,18 +424,18 @@
                     <div class="p-8">
                         <div class="flex justify-between items-start mb-4">
                             <div>
-                                <h3 class="font-bold text-xl mb-1">Voilages Ciel</h3>
-                                <p class="text-gray-500">Légèreté et translucidité</p>
+                                <h3 class="font-bold text-xl mb-1 dark:text-white">Voilages Ciel</h3>
+                                <p class="text-gray-500 dark:text-gray-400">Légèreté et translucidité</p>
                             </div>
-                            <span class="font-bold text-2xl">€159</span>
+                            <span class="font-bold text-2xl dark:text-white">€159</span>
                         </div>
-                        <p class="text-gray-600 mb-6">Tissu organza de soie, diffuse la lumière pour une ambiance apaisante.</p>
+                        <p class="text-gray-600 dark:text-gray-300 mb-6">Tissu organza de soie, diffuse la lumière pour une ambiance apaisante.</p>
                         <div class="flex justify-between items-center">
-                            <div class="flex items-center text-gray-500">
+                            <div class="flex items-center text-gray-500 dark:text-gray-400">
                                 <i class="fas fa-leaf mr-2"></i>
                                 <span class="text-sm">Éco-responsable</span>
                             </div>
-                            <button class="px-5 py-2 border-2 border-gray-900 text-gray-900 rounded-full font-medium hover:bg-gray-900 hover:text-white transition">
+                            <button class="px-5 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition">
                                 Découvrir
                             </button>
                         </div>
@@ -313,7 +444,7 @@
             </div>
             
             <div class="text-center mt-16">
-                <a href="#" class="inline-flex items-center text-gray-900 font-medium hover:underline">
+                <a href="#" class="inline-flex items-center text-gray-900 dark:text-white font-medium hover:underline">
                     Voir toute la collection
                     <i class="fas fa-arrow-right ml-3"></i>
                 </a>
@@ -420,26 +551,26 @@
     </section>
 
     <!-- Boutiques -->
-    <section id="boutiques" class="py-20 bg-white">
+    <section id="boutiques" class="py-20 bg-white dark:bg-gray-900">
         <div class="max-w-7xl mx-auto px-6">
             <div class="flex flex-col lg:flex-row items-center justify-between mb-16">
                 <div class="lg:w-1/2 mb-10 lg:mb-0">
-                    <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6">
+                    <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6 dark:text-white">
                         Nos <span class="gradient-text">espaces</span>
                     </h2>
-                    <p class="text-gray-600 text-lg">
+                    <p class="text-gray-600 dark:text-gray-300 text-lg">
                         Visitez nos boutiques-ateliers pour découvrir nos matériaux et rencontrer nos experts.
                     </p>
                 </div>
                 <div class="lg:w-1/2 lg:pl-16">
                     <div class="grid grid-cols-2 gap-6">
-                        <div class="bg-gray-50 p-6 rounded-2xl">
+                        <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
                             <div class="text-3xl font-bold gradient-text mb-2">5</div>
-                            <div class="font-medium">Boutiques en France</div>
+                            <div class="font-medium dark:text-gray-300">Boutiques en France</div>
                         </div>
-                        <div class="bg-gray-50 p-6 rounded-2xl">
+                        <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
                             <div class="text-3xl font-bold gradient-text mb-2">28</div>
-                            <div class="font-medium">Designers experts</div>
+                            <div class="font-medium dark:text-gray-300">Designers experts</div>
                         </div>
                     </div>
                 </div>
@@ -448,7 +579,7 @@
             <!-- Carte des boutiques -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
                 <!-- Boutique Paris -->
-                <div class="group bg-white rounded-3xl overflow-hidden shadow-soft hover-lift">
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift">
                     <div class="h-64 overflow-hidden">
                         <img src="https://images.unsplash.com/photo-1558618047-3c8c76ca7d13?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1771&q=80" 
                              alt="Boutique Paris" 
@@ -457,17 +588,17 @@
                     <div class="p-8">
                         <div class="flex justify-between items-start mb-4">
                             <div>
-                                <h3 class="font-bold text-2xl mb-2">Paris | Le Marais</h3>
-                                <p class="text-gray-500">Flagship store & atelier</p>
+                                <h3 class="font-bold text-2xl mb-2 dark:text-white">Paris | Le Marais</h3>
+                                <p class="text-gray-500 dark:text-gray-400">Flagship store & atelier</p>
                             </div>
-                            <span class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-medium">Nouveau</span>
+                            <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium">Nouveau</span>
                         </div>
-                        <p class="text-gray-600 mb-6">Notre boutique principale avec salle d'exposition et atelier visible.</p>
-                        <div class="flex items-center text-gray-500 mb-2">
+                        <p class="text-gray-600 dark:text-gray-300 mb-6">Notre boutique principale avec salle d'exposition et atelier visible.</p>
+                        <div class="flex items-center text-gray-500 dark:text-gray-400 mb-2">
                             <i class="fas fa-map-marker-alt mr-3"></i>
                             <span>12 Rue de la Couture, 75003 Paris</span>
                         </div>
-                        <div class="flex items-center text-gray-500">
+                        <div class="flex items-center text-gray-500 dark:text-gray-400">
                             <i class="fas fa-clock mr-3"></i>
                             <span>Du mardi au samedi, 10h-19h</span>
                         </div>
@@ -477,46 +608,46 @@
                 <!-- Liste des autres boutiques -->
                 <div class="space-y-6">
                     <!-- Boutique Lyon -->
-                    <div class="flex items-center p-6 bg-gray-50 rounded-2xl hover:bg-gray-100 transition">
+                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
                         <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
                             <i class="fas fa-store text-white text-xl"></i>
                         </div>
                         <div>
-                            <h4 class="font-bold text-lg mb-1">Lyon | Presqu'île</h4>
-                            <p class="text-gray-600 text-sm">45 Avenue des Tisserands, 69002 Lyon</p>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Lyon | Presqu'île</h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">45 Avenue des Tisserands, 69002 Lyon</p>
                         </div>
                     </div>
                     
                     <!-- Boutique Bordeaux -->
-                    <div class="flex items-center p-6 bg-gray-50 rounded-2xl hover:bg-gray-100 transition">
+                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
                         <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
                             <i class="fas fa-store text-white text-xl"></i>
                         </div>
                         <div>
-                            <h4 class="font-bold text-lg mb-1">Bordeaux | Centre</h4>
-                            <p class="text-gray-600 text-sm">8 Rue des Draperies, 33000 Bordeaux</p>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Bordeaux | Centre</h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">8 Rue des Draperies, 33000 Bordeaux</p>
                         </div>
                     </div>
                     
                     <!-- Boutique Lille -->
-                    <div class="flex items-center p-6 bg-gray-50 rounded-2xl hover:bg-gray-100 transition">
+                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
                         <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
                             <i class="fas fa-store text-white text-xl"></i>
                         </div>
                         <div>
-                            <h4 class="font-bold text-lg mb-1">Lille | Vieux Lille</h4>
-                            <p class="text-gray-600 text-sm">22 Place du Théâtre, 59000 Lille</p>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Lille | Vieux Lille</h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">22 Place du Théâtre, 59000 Lille</p>
                         </div>
                     </div>
                     
                     <!-- Boutique Toulouse -->
-                    <div class="flex items-center p-6 bg-gray-50 rounded-2xl hover:bg-gray-100 transition">
+                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
                         <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
                             <i class="fas fa-store text-white text-xl"></i>
                         </div>
                         <div>
-                            <h4 class="font-bold text-lg mb-1">Toulouse | Capitole</h4>
-                            <p class="text-gray-600 text-sm">15 Rue des Filatiers, 31000 Toulouse</p>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Toulouse | Capitole</h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">15 Rue des Filatiers, 31000 Toulouse</p>
                         </div>
                     </div>
                 </div>
@@ -703,6 +834,31 @@
             el.style.animationDelay = `${index * 0.1}s`;
             observer.observe(el);
         });
+
+        // Gestion du mode sombre
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeToggleMobile = document.getElementById('theme-toggle-mobile');
+        const body = document.body;
+
+        // Vérifier le thème sauvegardé ou la préférence système
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        // Appliquer le thème initial
+        if (savedTheme === 'dark' || (savedTheme === 'system' && prefersDark)) {
+            body.classList.add('dark-mode');
+        }
+
+        // Fonction pour basculer le thème
+        function toggleTheme() {
+            body.classList.toggle('dark-mode');
+            const isDarkMode = body.classList.contains('dark-mode');
+            localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+        }
+
+        // Ajouter les événements
+        themeToggle.addEventListener('click', toggleTheme);
+        themeToggleMobile.addEventListener('click', toggleTheme);
     </script>
 </body>
 </html>
