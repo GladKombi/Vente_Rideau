@@ -11,8 +11,8 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'pdg') {
 // Initialisation des variables
 $message = '';
 $message_type = '';
-$total_boutiques = 0;
-$boutiques = [];
+$total_utilisateurs = 0;
+$utilisateurs = [];
 
 // --- GESTION DES MESSAGES VIA SESSIONS ---
 if (isset($_SESSION['flash_message'])) {
@@ -21,20 +21,20 @@ if (isset($_SESSION['flash_message'])) {
     unset($_SESSION['flash_message']); // Supprimer le message après affichage
 }
 
-// Vérifier si c'est une requête AJAX pour récupérer les données d'une boutique (pour édition)
-if (isset($_GET['action']) && $_GET['action'] == 'get_boutique' && isset($_GET['id'])) {
-    $boutiqueId = intval($_GET['id']);
+// Vérifier si c'est une requête AJAX pour récupérer les données d'un utilisateur (pour édition)
+if (isset($_GET['action']) && $_GET['action'] == 'get_utilisateur' && isset($_GET['id'])) {
+    $utilisateurId = intval($_GET['id']);
     try {
-        $query = $pdo->prepare("SELECT id, nom, email, actif FROM boutiques WHERE id = ? AND statut = 0");
-        $query->execute([$boutiqueId]);
-        $boutique = $query->fetch(PDO::FETCH_ASSOC);
+        $query = $pdo->prepare("SELECT id, nom_utilisateur, email, role, actif FROM utilisateurs WHERE id = ? AND statut = 0");
+        $query->execute([$utilisateurId]);
+        $utilisateur = $query->fetch(PDO::FETCH_ASSOC);
 
-        if ($boutique) {
+        if ($utilisateur) {
             header('Content-Type: application/json');
-            echo json_encode(['success' => true, 'boutique' => $boutique]);
+            echo json_encode(['success' => true, 'utilisateur' => $utilisateur]);
         } else {
             header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Boutique non trouvée']);
+            echo json_encode(['success' => false, 'message' => 'Utilisateur non trouvé']);
         }
     } catch (PDOException $e) {
         header('Content-Type: application/json');
@@ -49,28 +49,34 @@ $limit = 10;
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $offset = ($page - 1) * $limit;
 
-// Compter le nombre total de boutiques
+// Compter le nombre total d'utilisateurs
 try {
-    $countQuery = $pdo->query("SELECT COUNT(*) FROM boutiques WHERE statut = 0");
-    $total_boutiques = $countQuery->fetchColumn();
-    $totalPages = ceil($total_boutiques / $limit);
+    $countQuery = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE statut = 0");
+    $total_utilisateurs = $countQuery->fetchColumn();
+    $totalPages = ceil($total_utilisateurs / $limit);
 
     // Requête paginée
-    $query = $pdo->prepare("SELECT * FROM boutiques WHERE statut = 0 ORDER BY actif DESC, date_creation DESC LIMIT :limit OFFSET :offset");
+    $query = $pdo->prepare("SELECT * FROM utilisateurs WHERE statut = 0 ORDER BY role, date_creation DESC LIMIT :limit OFFSET :offset");
     $query->bindValue(':limit', $limit, PDO::PARAM_INT);
     $query->bindValue(':offset', $offset, PDO::PARAM_INT);
     $query->execute();
-    $boutiques = $query->fetchAll(PDO::FETCH_ASSOC);
+    $utilisateurs = $query->fetchAll(PDO::FETCH_ASSOC);
     
     // Compter les actifs pour la carte de stats
-    $active_count_total = $pdo->query("SELECT COUNT(*) FROM boutiques WHERE actif = 1 AND statut = 0")->fetchColumn();
+    $active_count_total = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE actif = 1 AND statut = 0")->fetchColumn();
+    // Compter les PDG
+    $pdg_count = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE role = 'PDG' AND statut = 0")->fetchColumn();
+    // Compter les IT
+    $it_count = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE role = 'IT' AND statut = 0")->fetchColumn();
 
 } catch (PDOException $e) {
     $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des boutiques: " . $e->getMessage(),
+        'text' => "Erreur lors du chargement des utilisateurs: " . $e->getMessage(),
         'type' => "error"
     ];
     $active_count_total = 0;
+    $pdg_count = 0;
+    $it_count = 0;
 }
 ?>
 
@@ -80,7 +86,7 @@ try {
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <title>Gestion des boutiques - NGS (New Grace Service)</title>
+    <title>Gestion des utilisateurs - NGS (New Grace Service)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -211,6 +217,23 @@ try {
         .status-inactive {
             background-color: #FEE2E2;
             color: #991B1B;
+        }
+
+        .role-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .role-pdg {
+            background-color: #FEF3C7;
+            color: #92400E;
+        }
+
+        .role-it {
+            background-color: #DBEAFE;
+            color: #1E40AF;
         }
         
         /* NOUVELLES STYLES POUR LA SIDEBAR AVEC DÉFILEMENT */
@@ -436,10 +459,9 @@ try {
                     <i class="fas fa-chart-line w-5 text-gray-300"></i>
                     <span>Tableau de bord</span>
                 </a>
-                <a href="boutiques.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10">
-                    <i class="fas fa-store w-5 text-white"></i>
+                <a href="boutiques.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-store w-5 text-gray-300"></i>
                     <span>Boutiques</span>
-                    <span class="notification-badge"><?= $total_boutiques ?></span>
                 </a>
                 <a href="rapports.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-chart-bar w-5 text-gray-300"></i>
@@ -449,9 +471,10 @@ try {
                     <i class="fas fa-box w-5 text-gray-300"></i>
                     <span>Produits</span>
                 </a>
-                <a href="utilisateurs.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-users w-5 text-gray-300"></i>
+                <a href="utilisateurs.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10">
+                    <i class="fas fa-users w-5 text-white"></i>
                     <span>Utilisateurs</span>
+                    <span class="notification-badge"><?= $total_utilisateurs ?></span>
                 </a>
                 <a href="parametres.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-cog w-5 text-gray-300"></i>
@@ -471,14 +494,14 @@ try {
             <header class="bg-white border-b border-gray-200 p-4 md:p-6 sticky top-0 z-30 shadow-sm">
                 <div class="flex justify-between items-center">
                     <div>
-                        <h1 class="text-xl md:text-2xl font-bold text-gray-900">Gestion des boutiques - NGS</h1>
-                        <p class="text-gray-600 text-sm md:text-base">New Grace Service - Gérez les boutiques de votre entreprise</p>
+                        <h1 class="text-xl md:text-2xl font-bold text-gray-900">Gestion des utilisateurs - NGS</h1>
+                        <p class="text-gray-600 text-sm md:text-base">New Grace Service - Gérez les utilisateurs PDG et IT</p>
                     </div>
                     <div class="flex items-center space-x-4">
-                        <button onclick="openBoutiqueModal()"
+                        <button onclick="openUtilisateurModal()"
                             class="px-4 py-3 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
                             <i class="fas fa-plus"></i>
-                            <span class="hidden md:inline">Nouvelle boutique</span>
+                            <span class="hidden md:inline">Nouvel utilisateur</span>
                             <span class="md:hidden">Nouveau</span>
                         </button>
                     </div>
@@ -517,12 +540,12 @@ try {
                     <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-blue-500 animate-fade-in">
                         <div class="flex items-center justify-between mb-4">
                             <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                                <i class="fas fa-store text-blue-600 text-xl"></i>
+                                <i class="fas fa-users text-blue-600 text-xl"></i>
                             </div>
                             <span class="text-sm font-medium text-blue-600">Total</span>
                         </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_boutiques ?></h3>
-                        <p class="text-gray-600">Boutiques enregistrées</p>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_utilisateurs ?></h3>
+                        <p class="text-gray-600">Utilisateurs enregistrés</p>
                     </div>
 
                     <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-green-500 animate-fade-in" style="animation-delay: 0.1s">
@@ -530,32 +553,32 @@ try {
                             <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
                                 <i class="fas fa-check-circle text-green-600 text-xl"></i>
                             </div>
-                            <span class="text-sm font-medium text-green-600">Actives</span>
+                            <span class="text-sm font-medium text-green-600">Actifs</span>
                         </div>
                         <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $active_count_total ?></h3>
-                        <p class="text-gray-600">Boutiques opérationnelles</p>
+                        <p class="text-gray-600">Utilisateurs actifs</p>
                     </div>
 
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-red-500 animate-fade-in" style="animation-delay: 0.2s">
+                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-yellow-500 animate-fade-in" style="animation-delay: 0.2s">
                         <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center">
-                                <i class="fas fa-times-circle text-red-600 text-xl"></i>
+                            <div class="w-12 h-12 rounded-xl bg-yellow-100 flex items-center justify-center">
+                                <i class="fas fa-crown text-yellow-600 text-xl"></i>
                             </div>
-                            <span class="text-sm font-medium text-red-600">Inactives</span>
+                            <span class="text-sm font-medium text-yellow-600">PDG</span>
                         </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_boutiques - $active_count_total ?></h3>
-                        <p class="text-gray-600">Boutiques désactivées</p>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $pdg_count ?></h3>
+                        <p class="text-gray-600">Administrateurs PDG</p>
                     </div>
 
                     <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-purple-500 animate-fade-in" style="animation-delay: 0.3s">
                         <div class="flex items-center justify-between mb-4">
                             <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                                <i class="fas fa-file-alt text-purple-600 text-xl"></i>
+                                <i class="fas fa-laptop-code text-purple-600 text-xl"></i>
                             </div>
-                            <span class="text-sm font-medium text-purple-600">Pagination</span>
+                            <span class="text-sm font-medium text-purple-600">IT</span>
                         </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $page ?></h3>
-                        <p class="text-gray-600">sur <?= $totalPages ?> pages</p>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $it_count ?></h3>
+                        <p class="text-gray-600">Techniciens IT</p>
                     </div>
                 </div>
 
@@ -564,7 +587,7 @@ try {
                         <div class="relative flex-1 max-w-lg">
                             <input type="text"
                                 id="searchInput"
-                                placeholder="Rechercher par Nom ou Email..."
+                                placeholder="Rechercher par Nom d'utilisateur ou Email..."
                                 class="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-secondary focus:border-secondary transition-all shadow-sm">
                             <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
                         </div>
@@ -583,61 +606,64 @@ try {
 
                 <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in" style="animation-delay: 0.5s">
                     <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                        <h2 class="text-lg font-semibold text-gray-900">Liste des boutiques - NGS</h2>
+                        <h2 class="text-lg font-semibold text-gray-900">Liste des utilisateurs - NGS</h2>
                     </div>
 
                     <div class="overflow-x-auto">
-                        <table class="w-full min-w-[700px]" id="boutiquesTable">
+                        <table class="w-full min-w-[700px]" id="utilisateursTable">
                             <thead class="bg-gray-50">
                                 <tr>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom d'utilisateur</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rôle</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Création</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200" id="tableBody">
-                                <?php foreach ($boutiques as $index => $boutique): ?>
-                                    <tr class="boutique-row hover:bg-gray-50 transition-colors fade-in-row"
-                                        data-boutique-name="<?= htmlspecialchars(strtolower($boutique['nom'])) ?>"
-                                        data-boutique-email="<?= htmlspecialchars(strtolower($boutique['email'])) ?>"
+                                <?php foreach ($utilisateurs as $index => $utilisateur): ?>
+                                    <tr class="utilisateur-row hover:bg-gray-50 transition-colors fade-in-row"
+                                        data-utilisateur-name="<?= htmlspecialchars(strtolower($utilisateur['nom_utilisateur'])) ?>"
+                                        data-utilisateur-email="<?= htmlspecialchars(strtolower($utilisateur['email'])) ?>"
                                         style="animation-delay: <?= $index * 0.05 ?>s">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#<?= $boutique['id'] ?></td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 boutique-name">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#<?= $utilisateur['id'] ?></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 utilisateur-name">
                                             <div class="flex items-center">
-                                                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-3">
-                                                    <i class="fas fa-store text-blue-600 text-xs"></i>
+                                                <div class="w-8 h-8 rounded-full <?= $utilisateur['role'] == 'PDG' ? 'bg-yellow-100' : 'bg-purple-100' ?> flex items-center justify-center mr-3">
+                                                    <i class="<?= $utilisateur['role'] == 'PDG' ? 'fas fa-crown text-yellow-600' : 'fas fa-laptop-code text-purple-600' ?> text-xs"></i>
                                                 </div>
-                                                <?= htmlspecialchars($boutique['nom']) ?>
+                                                <?= htmlspecialchars($utilisateur['nom_utilisateur']) ?>
                                             </div>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 boutique-email"><?= htmlspecialchars($boutique['email']) ?></td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?= date('d/m/Y', strtotime($boutique['date_creation'])) ?></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 utilisateur-email"><?= htmlspecialchars($utilisateur['email']) ?></td>
                                         <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="status-badge <?= $boutique['actif'] ? 'status-active' : 'status-inactive' ?> inline-flex items-center">
-                                                <?php if ($boutique['actif']): ?>
-                                                    <i class="fas fa-circle text-xs mr-1"></i>
-                                                <?php else: ?>
-                                                    <i class="fas fa-circle text-xs mr-1"></i>
-                                                <?php endif; ?>
-                                                <?= $boutique['actif'] ? 'Active' : 'Inactive' ?>
+                                            <span class="role-badge <?= $utilisateur['role'] == 'PDG' ? 'role-pdg' : 'role-it' ?> inline-flex items-center">
+                                                <i class="fas <?= $utilisateur['role'] == 'PDG' ? 'fa-crown' : 'fa-laptop-code' ?> text-xs mr-1"></i>
+                                                <?= $utilisateur['role'] ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?= date('d/m/Y', strtotime($utilisateur['date_creation'])) ?></td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="status-badge <?= $utilisateur['actif'] ? 'status-active' : 'status-inactive' ?> inline-flex items-center">
+                                                <i class="fas fa-circle text-xs mr-1"></i>
+                                                <?= $utilisateur['actif'] ? 'Actif' : 'Inactif' ?>
                                             </span>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2 action-buttons">
-                                                <button onclick="openBoutiqueModal(<?= $boutique['id'] ?>); return false;" 
+                                                <button onclick="openUtilisateurModal(<?= $utilisateur['id'] ?>); return false;" 
                                                         class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
                                                     <i class="fas fa-edit mr-1"></i>
                                                     <span class="hidden md:inline">Modifier</span>
                                                 </button>
-                                                <button onclick="openToggleModal(<?= $boutique['id'] ?>, '<?= htmlspecialchars(addslashes($boutique['nom'])) ?>', <?= $boutique['actif'] ?>); return false;"
-                                                        class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white <?= $boutique['actif'] ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700' ?> focus:outline-none focus:ring-2 focus:ring-offset-2 <?= $boutique['actif'] ? 'focus:ring-orange-500' : 'focus:ring-green-500' ?> transition-colors">
+                                                <button onclick="openToggleModal(<?= $utilisateur['id'] ?>, '<?= htmlspecialchars(addslashes($utilisateur['nom_utilisateur'])) ?>', <?= $utilisateur['actif'] ?>); return false;"
+                                                        class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white <?= $utilisateur['actif'] ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700' ?> focus:outline-none focus:ring-2 focus:ring-offset-2 <?= $utilisateur['actif'] ? 'focus:ring-orange-500' : 'focus:ring-green-500' ?> transition-colors">
                                                     <i class="fas fa-power-off mr-1"></i>
-                                                    <span class="hidden md:inline"><?= $boutique['actif'] ? 'Désactiver' : 'Activer' ?></span>
+                                                    <span class="hidden md:inline"><?= $utilisateur['actif'] ? 'Désactiver' : 'Activer' ?></span>
                                                 </button>
-                                                <button onclick="openDeleteModal(<?= $boutique['id'] ?>, '<?= htmlspecialchars(addslashes($boutique['nom'])) ?>'); return false;"
+                                                <button onclick="openDeleteModal(<?= $utilisateur['id'] ?>, '<?= htmlspecialchars(addslashes($utilisateur['nom_utilisateur'])) ?>'); return false;"
                                                         class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors">
                                                     <i class="fas fa-trash-alt mr-1"></i>
                                                     <span class="hidden md:inline">Supprimer</span>
@@ -654,20 +680,20 @@ try {
                         <div class="bg-gray-50 rounded-2xl p-8 max-w-md mx-auto shadow-soft">
                             <i class="fas fa-search text-6xl text-gray-400 mb-4"></i>
                             <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
-                            <p class="text-gray-600">Aucune boutique ne correspond à votre recherche</p>
+                            <p class="text-gray-600">Aucun utilisateur ne correspond à votre recherche</p>
                         </div>
                     </div>
 
-                    <?php if (empty($boutiques) && $page == 1): ?>
+                    <?php if (empty($utilisateurs) && $page == 1): ?>
                         <div class="text-center py-12">
                             <div class="bg-gray-50 rounded-2xl p-8 max-w-md mx-auto shadow-soft">
-                                <i class="fas fa-store text-6xl text-gray-400 mb-4"></i>
-                                <h3 class="text-lg font-medium text-gray-900 mb-2">Aucune boutique enregistrée</h3>
-                                <p class="text-gray-600 mb-4">Commencez par ajouter votre première boutique</p>
-                                <button onclick="openBoutiqueModal()"
+                                <i class="fas fa-users text-6xl text-gray-400 mb-4"></i>
+                                <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun utilisateur enregistré</h3>
+                                <p class="text-gray-600 mb-4">Commencez par ajouter votre premier utilisateur</p>
+                                <button onclick="openUtilisateurModal()"
                                     class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 mx-auto shadow-md">
                                     <i class="fas fa-plus"></i>
-                                    <span>Ajouter une boutique</span>
+                                    <span>Ajouter un utilisateur</span>
                                 </button>
                             </div>
                         </div>
@@ -678,8 +704,8 @@ try {
                             <div class="flex items-center justify-between">
                                 <div class="text-sm text-gray-700 hidden sm:block">
                                     Affichage de <span class="font-medium"><?= ($page - 1) * $limit + 1 ?></span> à
-                                    <span class="font-medium"><?= min($page * $limit, $total_boutiques) ?></span> sur
-                                    <span class="font-medium"><?= $total_boutiques ?></span> boutiques
+                                    <span class="font-medium"><?= min($page * $limit, $total_utilisateurs) ?></span> sur
+                                    <span class="font-medium"><?= $total_utilisateurs ?></span> utilisateurs
                                 </div>
 
                                 <div class="flex items-center space-x-2 mx-auto sm:mx-0">
@@ -715,34 +741,43 @@ try {
         </div>
     </div>
     
-    <div id="boutiqueModal" class="modal transition-all duration-300 ease-in-out">
+    <div id="utilisateurModal" class="modal transition-all duration-300 ease-in-out">
         <div class="modal-content slide-down p-6">
             <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <h3 class="text-xl font-bold text-gray-900" id="modalTitle">Ajouter une nouvelle boutique - NGS</h3>
-                <button onclick="closeBoutiqueModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                <h3 class="text-xl font-bold text-gray-900" id="modalTitle">Ajouter un nouvel utilisateur - NGS</h3>
+                <button onclick="closeUtilisateurModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
                     <i class="fas fa-times text-2xl"></i>
                 </button>
             </div>
             
-            <form id="boutiqueForm" method="POST" action="../models/traitement/boutique-post.php">
-                <input type="hidden" name="id" id="boutiqueId">
+            <form id="utilisateurForm" method="POST" action="../models/traitement/utilisateur-post.php">
+                <input type="hidden" name="id" id="utilisateurId">
 
                 <div class="space-y-4">
                     <div>
-                        <label for="nom" class="block text-sm font-medium text-gray-700 mb-1">Nom de la boutique</label>
-                        <input type="text" name="nom" id="nom" required
+                        <label for="nom_utilisateur" class="block text-sm font-medium text-gray-700 mb-1">Nom d'utilisateur</label>
+                        <input type="text" name="nom_utilisateur" id="nom_utilisateur" required
                                class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
-                               placeholder="Ex: Boutique Paris Centre">
+                               placeholder="Ex: admin">
                     </div>
                     <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email de connexion</label>
-                        <input type="email" name="email" id="email" required
+                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" name="email" id="email"
                                class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
-                               placeholder="Ex: contact@boutiqueparis.com">
+                               placeholder="Ex: contact@example.com">
+                    </div>
+                    <div>
+                        <label for="role" class="block text-sm font-medium text-gray-700 mb-1">Rôle</label>
+                        <select name="role" id="role" required
+                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3">
+                            <option value="">Sélectionnez un rôle</option>
+                            <option value="PDG">PDG (Administrateur)</option>
+                            <option value="IT">IT (Technicien)</option>
+                        </select>
                     </div>
                     <div id="passwordField">
                         <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-                        <input type="password" name="password" id="password"
+                        <input type="password" name="mot_de_passe" id="password"
                                class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
                                placeholder="Laisser vide pour ne pas modifier">
                         <p class="text-xs text-gray-500 mt-1" id="passwordHint">Requis lors de l'ajout. Laisser vide lors de la modification pour conserver l'ancien.</p>
@@ -751,18 +786,18 @@ try {
                     <div class="flex items-center space-x-2">
                         <input type="checkbox" name="actif" id="actif" value="1" checked
                                class="h-4 w-4 text-secondary border-gray-300 rounded focus:ring-secondary">
-                        <label for="actif" class="text-sm font-medium text-gray-700">Boutique active</label>
+                        <label for="actif" class="text-sm font-medium text-gray-700">Utilisateur actif</label>
                     </div>
                 </div>
 
                 <div class="mt-6 flex justify-end space-x-3">
-                    <button type="button" onclick="closeBoutiqueModal()"
+                    <button type="button" onclick="closeUtilisateurModal()"
                             class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
                         Annuler
                     </button>
-                    <button type="submit" name="ajouter_boutique" id="submitButton"
+                    <button type="submit" name="ajouter_utilisateur" id="submitButton"
                             class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                        Enregistrer la boutique
+                        Enregistrer l'utilisateur
                     </button>
                 </div>
             </form>
@@ -781,11 +816,11 @@ try {
             <div class="text-center py-4">
                 <i id="toggleIcon" class="fas fa-power-off text-5xl mb-4 text-gray-500"></i>
                 <p class="text-lg font-medium text-gray-800 mb-2">Voulez-vous vraiment continuer ?</p>
-                <p class="text-gray-600" id="toggleModalText">Le statut de la boutique **NomBoutique** va être modifié.</p>
+                <p class="text-gray-600" id="toggleModalText">Le statut de l'utilisateur **NomUtilisateur** va être modifié.</p>
             </div>
 
-            <form id="toggleForm" method="POST" action="../models/traitement/boutique-post.php" class="mt-6 flex justify-center space-x-3">
-                <input type="hidden" name="id" id="toggleBoutiqueId">
+            <form id="toggleForm" method="POST" action="../models/traitement/utilisateur-post.php" class="mt-6 flex justify-center space-x-3">
+                <input type="hidden" name="id" id="toggleUtilisateurId">
                 <button type="button" onclick="closeToggleModal()"
                         class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
                     Annuler
@@ -810,18 +845,18 @@ try {
             <div class="text-center py-4">
                 <i class="fas fa-trash-alt text-5xl mb-4 text-red-500"></i>
                 <p class="text-lg font-bold text-red-700 mb-2">ATTENTION ! Suppression (Archivage)</p>
-                <p class="text-gray-600 mb-4" id="deleteModalText">Vous êtes sur le point d'archiver la boutique **NomBoutique**. Elle ne sera plus visible, mais ses données resteront en base de données (Soft Delete).</p>
+                <p class="text-gray-600 mb-4" id="deleteModalText">Vous êtes sur le point d'archiver l'utilisateur **NomUtilisateur**. Il ne sera plus visible, mais ses données resteront en base de données (Soft Delete).</p>
             </div>
 
-            <form id="deleteForm" method="POST" action="../models/traitement/boutique-post.php" class="mt-6 flex justify-center space-x-3">
-                <input type="hidden" name="id" id="deleteBoutiqueId">
+            <form id="deleteForm" method="POST" action="../models/traitement/utilisateur-post.php" class="mt-6 flex justify-center space-x-3">
+                <input type="hidden" name="id" id="deleteUtilisateurId">
                 <button type="button" onclick="closeDeleteModal()"
                         class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
                     Annuler
                 </button>
-                <button type="submit" name="supprimer_boutique"
+                <button type="submit" name="supprimer_utilisateur"
                         class="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                    Oui, Archiver cette boutique
+                    Oui, Archiver cet utilisateur
                 </button>
             </form>
         </div>
@@ -920,60 +955,61 @@ try {
         sidebarNav.style.scrollBehavior = 'smooth';
 
         // --- GESTION DE LA MODALE AJOUT/MODIF ---
-        const boutiqueModal = document.getElementById('boutiqueModal');
+        const utilisateurModal = document.getElementById('utilisateurModal');
         const modalTitle = document.getElementById('modalTitle');
-        const boutiqueForm = document.getElementById('boutiqueForm');
+        const utilisateurForm = document.getElementById('utilisateurForm');
         const submitButton = document.getElementById('submitButton');
-        const boutiqueId = document.getElementById('boutiqueId');
+        const utilisateurId = document.getElementById('utilisateurId');
         const passwordInput = document.getElementById('password');
         const passwordHint = document.getElementById('passwordHint');
 
-        function openBoutiqueModal(id = null) {
-            boutiqueForm.reset();
+        function openUtilisateurModal(id = null) {
+            utilisateurForm.reset();
             
             if (id) {
                 // Mode Modification
-                modalTitle.textContent = "Modifier la boutique #" + id + " - NGS";
-                submitButton.textContent = "Modifier la boutique";
-                boutiqueId.value = id;
-                submitButton.name = 'modifier_boutique';
+                modalTitle.textContent = "Modifier l'utilisateur #" + id + " - NGS";
+                submitButton.textContent = "Modifier l'utilisateur";
+                utilisateurId.value = id;
+                submitButton.name = 'modifier_utilisateur';
                 passwordInput.required = false; 
                 passwordHint.textContent = "Laisser vide pour conserver le mot de passe actuel.";
 
-                fetch('boutiques.php?action=get_boutique&id=' + id)
+                fetch('utilisateurs.php?action=get_utilisateur&id=' + id)
                     .then(response => response.json())
                     .then(data => {
                         if (data.success) {
-                            document.getElementById('nom').value = data.boutique.nom;
-                            document.getElementById('email').value = data.boutique.email;
-                            document.getElementById('actif').checked = data.boutique.actif == 1;
+                            document.getElementById('nom_utilisateur').value = data.utilisateur.nom_utilisateur;
+                            document.getElementById('email').value = data.utilisateur.email;
+                            document.getElementById('role').value = data.utilisateur.role;
+                            document.getElementById('actif').checked = data.utilisateur.actif == 1;
                         } else {
                             alert(data.message);
-                            closeBoutiqueModal();
+                            closeUtilisateurModal();
                         }
                     })
                     .catch(error => {
                         console.error('Erreur AJAX:', error);
-                        alert("Impossible de charger les données de la boutique.");
-                        closeBoutiqueModal();
+                        alert("Impossible de charger les données de l'utilisateur.");
+                        closeUtilisateurModal();
                     });
 
             } else {
                 // Mode Ajout
-                modalTitle.textContent = "Ajouter une nouvelle boutique - NGS";
-                submitButton.textContent = "Enregistrer la boutique";
-                boutiqueId.value = '';
-                submitButton.name = 'ajouter_boutique';
+                modalTitle.textContent = "Ajouter un nouvel utilisateur - NGS";
+                submitButton.textContent = "Enregistrer l'utilisateur";
+                utilisateurId.value = '';
+                submitButton.name = 'ajouter_utilisateur';
                 passwordInput.required = true; 
                 passwordHint.textContent = "Requis lors de l'ajout.";
                 document.getElementById('actif').checked = true;
             }
 
-            boutiqueModal.classList.add('show');
+            utilisateurModal.classList.add('show');
         }
 
-        function closeBoutiqueModal() {
-            boutiqueModal.classList.remove('show');
+        function closeUtilisateurModal() {
+            utilisateurModal.classList.remove('show');
         }
 
         // --- GESTION DE LA MODALE TOGGLE ---
@@ -981,7 +1017,7 @@ try {
         const toggleModalTitle = document.getElementById('toggleModalTitle');
         const toggleModalText = document.getElementById('toggleModalText');
         const toggleIcon = document.getElementById('toggleIcon');
-        const toggleBoutiqueId = document.getElementById('toggleBoutiqueId');
+        const toggleUtilisateurId = document.getElementById('toggleUtilisateurId');
         const toggleConfirmButton = document.getElementById('toggleConfirmButton');
 
         function openToggleModal(id, nom, actif) {
@@ -991,14 +1027,14 @@ try {
             const buttonText = actif ? 'Oui, Désactiver' : 'Oui, Activer';
 
             toggleModalTitle.textContent = "Confirmer la " + action + " - NGS";
-            toggleModalText.innerHTML = `Le statut de la boutique <strong>${nom}</strong> va passer à <strong>${action}</strong>.<br>Voulez-vous confirmer cette action ?`;
+            toggleModalText.innerHTML = `Le statut de l'utilisateur <strong>${nom}</strong> va passer à <strong>${action}</strong>.<br>Voulez-vous confirmer cette action ?`;
             
             toggleIcon.className = `fas fa-power-off text-5xl mb-4 ${iconClass}`;
             
             toggleConfirmButton.textContent = buttonText;
             toggleConfirmButton.className = `px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md ${buttonColor}`;
 
-            toggleBoutiqueId.value = id;
+            toggleUtilisateurId.value = id;
             toggleModal.classList.add('show');
         }
 
@@ -1009,11 +1045,11 @@ try {
         // --- GESTION DE LA MODALE DELETE ---
         const deleteModal = document.getElementById('deleteModal');
         const deleteModalText = document.getElementById('deleteModalText');
-        const deleteBoutiqueId = document.getElementById('deleteBoutiqueId');
+        const deleteUtilisateurId = document.getElementById('deleteUtilisateurId');
 
         function openDeleteModal(id, nom) {
-            deleteModalText.innerHTML = `Vous êtes sur le point d'archiver la boutique <strong>${nom}</strong>. Elle ne sera plus visible, mais ses données resteront en base de données (Soft Delete). Cette action est réversible uniquement par un administrateur système. Confirmez-vous ?`;
-            deleteBoutiqueId.value = id;
+            deleteModalText.innerHTML = `Vous êtes sur le point d'archiver l'utilisateur <strong>${nom}</strong>. Il ne sera plus visible, mais ses données resteront en base de données (Soft Delete). Cette action est réversible uniquement par un administrateur système. Confirmez-vous ?`;
+            deleteUtilisateurId.value = id;
             deleteModal.classList.add('show');
         }
 
@@ -1024,12 +1060,12 @@ try {
         // --- GESTION DE LA RECHERCHE ---
         document.getElementById('searchInput').addEventListener('keyup', function() {
             const searchTerm = this.value.toLowerCase();
-            const rows = document.querySelectorAll('.boutique-row');
+            const rows = document.querySelectorAll('.utilisateur-row');
             let found = false;
 
             rows.forEach(row => {
-                const name = row.dataset.boutiqueName;
-                const email = row.dataset.boutiqueEmail;
+                const name = row.dataset.utilisateurName;
+                const email = row.dataset.utilisateurEmail;
 
                 if (name.includes(searchTerm) || email.includes(searchTerm)) {
                     row.style.display = '';

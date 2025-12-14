@@ -43,7 +43,7 @@ if (isset($_GET['change_profile'])) {
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
 
-    <title><?php echo $pageTitle; ?> - Julien_Rideau</title>
+    <title><?php echo $pageTitle; ?> - NGS (New Grace Service)</title>
     <meta content="" name="description">
     <meta content="" name="keywords">
     
@@ -169,9 +169,9 @@ if (isset($_GET['change_profile'])) {
             <div class="flex justify-between items-center">
                 <a href="index.php" class="flex items-center space-x-2">
                     <div class="w-8 h-8 rounded-full gradient-accent flex items-center justify-center">
-                        <span class="font-bold text-white text-sm">JR</span>
+                        <span class="font-bold text-white text-sm">NGS</span>
                     </div>
-                    <span class="text-lg font-semibold text-white font-display">Julien_Rideau</span>
+                    <span class="text-lg font-semibold text-white font-display">NGS - New Grace Service</span>
                 </a>
                 <a href="index.php" class="text-white/80 hover:text-white transition-colors text-sm flex items-center">
                     <i class="fas fa-arrow-left mr-2"></i>
@@ -212,7 +212,7 @@ if (isset($_GET['change_profile'])) {
                         <i class="fas fa-lock text-white text-2xl"></i>
                     </div>
                     <h1 class="text-3xl font-bold text-white mb-2 font-display"><?php echo $pageTitle; ?></h1>
-                    <p class="text-gray-300">Accédez à votre espace personnel</p>
+                    <p class="text-gray-300">Accédez à votre espace personnel - New Grace Service</p>
                 </div>
 
                 <!-- User Type Selection (only show if no specific type is selected in session) -->
@@ -330,7 +330,7 @@ if (isset($_GET['change_profile'])) {
                         <div class="relative">
                             <input required type="email" name="email" id="email" 
                                    class="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl input-focus focus:outline-none transition-colors text-white placeholder-gray-400"
-                                   placeholder="exemple@julien-rideau.fr">
+                                   placeholder="exemple@ngs.com">
                             <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
                                 <i class="fas fa-user text-gray-400"></i>
                             </div>
@@ -401,7 +401,7 @@ if (isset($_GET['change_profile'])) {
                     <div class="mt-6 pt-6 border-t border-white/10">
                         <p class="text-xs text-gray-400">
                             <i class="fas fa-info-circle mr-1"></i>
-                            Pour toute demande d'accès, contactez le service IT : it@julien-rideau.fr
+                            Pour toute demande d'accès, contactez le service IT : it@ngs.com
                         </p>
                     </div>
                 </div>

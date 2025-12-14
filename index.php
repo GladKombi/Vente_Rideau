@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Julien_Rideau | Rideaux sur mesure d'exception</title>
+    <title>NGS | New Grace Service - Rideaux sur mesure d'exception</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome -->
@@ -202,6 +202,16 @@
             right: 8px;
             color: white;
         }
+        
+        /* Animation pour le logo NGS */
+        @keyframes pulse-grace {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        .pulse-grace {
+            animation: pulse-grace 2s ease-in-out infinite;
+        }
     </style>
 </head>
 <body class="text-gray-800 bg-white overflow-x-hidden">
@@ -209,14 +219,14 @@
     <header class="fixed w-full z-50 py-4 px-6 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md">
         <div class="max-w-7xl mx-auto">
             <div class="flex justify-between items-center">
-                <!-- Logo -->
+                <!-- Logo NGS -->
                 <div class="flex items-center space-x-2">
-                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center">
-                        <span class="font-bold text-white text-lg">JR</span>
+                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center pulse-grace">
+                        <span class="font-bold text-white text-lg">NGS</span>
                     </div>
                     <div>
-                        <h1 class="font-display text-xl font-bold text-gray-900 dark:text-white">Julien_Rideau</h1>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">depuis 1995</p>
+                        <h1 class="font-display text-xl font-bold text-gray-900 dark:text-white">NGS</h1>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">New Grace Service | depuis 1995</p>
                     </div>
                 </div>
                 
@@ -267,11 +277,13 @@
         <div class="max-w-7xl mx-auto px-6">
             <div class="flex flex-col lg:flex-row items-center">
                 <div class="lg:w-1/2 animate-fade-in">
-                    <div class="inline-flex items-center px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm mb-6">
-                        <span class="text-sm">Nouvelle collection 2023</span>
+                    <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm mb-6">
+                        <span class="text-sm">Nouveau nom, même excellence</span>
+                        <span class="px-2 py-0.5 gradient-accent rounded-full text-xs">NGS</span>
                     </div>
                     <h1 class="text-5xl lg:text-6xl font-display font-bold mb-6 leading-tight">
-                        L'art du <span class="gradient-text">rideau</span> sur mesure
+                        <span class="gradient-text">New Grace Service</span><br>
+                        L'art du rideau sur mesure
                     </h1>
                     <p class="text-xl text-gray-300 mb-10 max-w-2xl">
                         Transformez vos intérieurs avec nos créations d'exception. Design minimaliste, matériaux nobles et savoir-faire français.
@@ -334,7 +346,7 @@
         <div class="max-w-7xl mx-auto px-6">
             <div class="text-center mb-16">
                 <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6 dark:text-white">
-                    Collection <span class="gradient-text">Signature</span>
+                    Collection <span class="gradient-text">Signature NGS</span>
                 </h2>
                 <p class="text-gray-600 dark:text-gray-300 text-lg max-w-2xl mx-auto">
                     Des pièces uniques conçues avec des matériaux d'exception, pour des intérieurs d'exception.
@@ -445,7 +457,7 @@
             
             <div class="text-center mt-16">
                 <a href="#" class="inline-flex items-center text-gray-900 dark:text-white font-medium hover:underline">
-                    Voir toute la collection
+                    Voir toute la collection NGS
                     <i class="fas fa-arrow-right ml-3"></i>
                 </a>
             </div>
@@ -457,7 +469,7 @@
         <div class="max-w-7xl mx-auto px-6">
             <div class="text-center mb-16">
                 <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6">
-                    Notre <span class="gradient-text">approche</span> sur mesure
+                    L'approche <span class="gradient-text">New Grace Service</span>
                 </h2>
                 <p class="text-gray-300 text-lg max-w-2xl mx-auto">
                     Un service personnalisé de la conception à l'installation.
@@ -544,7 +556,7 @@
             <div class="text-center mt-16">
                 <a href="#contact" class="px-8 py-4 bg-white text-gray-900 rounded-full font-medium hover:bg-gray-100 transition inline-flex items-center">
                     <i class="fas fa-calendar mr-3"></i>
-                    Prendre rendez-vous
+                    Prendre rendez-vous avec NGS
                 </a>
             </div>
         </div>
@@ -556,7 +568,7 @@
             <div class="flex flex-col lg:flex-row items-center justify-between mb-16">
                 <div class="lg:w-1/2 mb-10 lg:mb-0">
                     <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6 dark:text-white">
-                        Nos <span class="gradient-text">espaces</span>
+                        Nos <span class="gradient-text">espaces NGS</span>
                     </h2>
                     <p class="text-gray-600 dark:text-gray-300 text-lg">
                         Visitez nos boutiques-ateliers pour découvrir nos matériaux et rencontrer nos experts.
@@ -589,7 +601,7 @@
                         <div class="flex justify-between items-start mb-4">
                             <div>
                                 <h3 class="font-bold text-2xl mb-2 dark:text-white">Paris | Le Marais</h3>
-                                <p class="text-gray-500 dark:text-gray-400">Flagship store & atelier</p>
+                                <p class="text-gray-500 dark:text-gray-400">Flagship store NGS</p>
                             </div>
                             <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium">Nouveau</span>
                         </div>
@@ -665,7 +677,7 @@
                         Discutons de <span class="gradient-text">votre projet</span>
                     </h2>
                     <p class="text-gray-400 mb-10">
-                        Prenez rendez-vous avec l'un de nos designers pour une consultation gratuite à domicile.
+                        Prenez rendez-vous avec l'un de nos designers NGS pour une consultation gratuite à domicile.
                     </p>
                     
                     <form class="space-y-6">
@@ -727,7 +739,7 @@
                                 </div>
                                 <div>
                                     <h4 class="font-bold mb-1">Email</h4>
-                                    <p class="text-gray-400">contact@julien-rideau.fr</p>
+                                    <p class="text-gray-400">contact@ngs-service.fr</p>
                                 </div>
                             </div>
                             
@@ -754,7 +766,7 @@
                             </div>
                             <div class="bg-gray-800 rounded-xl p-6">
                                 <h4 class="font-bold mb-2">Proposez-vous la pose ?</h4>
-                                <p class="text-gray-400 text-sm">Oui, nos experts installent tous nos produits.</p>
+                                <p class="text-gray-400 text-sm">Oui, nos experts NGS installent tous nos produits.</p>
                             </div>
                         </div>
                     </div>
@@ -769,15 +781,15 @@
             <div class="flex flex-col md:flex-row justify-between items-center">
                 <div class="mb-8 md:mb-0">
                     <div class="flex items-center mb-4">
-                        <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center">
-                            <span class="font-bold text-white text-lg">JR</span>
+                        <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center pulse-grace">
+                            <span class="font-bold text-white text-lg">NGS</span>
                         </div>
                         <div class="ml-4">
-                            <h2 class="font-display text-xl font-bold">Julien_Rideau</h2>
-                            <p class="text-gray-500 text-sm">Rideaux sur mesure d'exception</p>
+                            <h2 class="font-display text-xl font-bold">New Grace Service</h2>
+                            <p class="text-gray-500 text-sm">Rideaux sur mesure d'exception | depuis 1995</p>
                         </div>
                     </div>
-                    <p class="text-gray-500 text-sm">© 2023 Julien_Rideau. Tous droits réservés.</p>
+                    <p class="text-gray-500 text-sm">© 2023 NGS - New Grace Service. Tous droits réservés.</p>
                 </div>
                 
                 <div class="flex space-x-6">
@@ -795,6 +807,7 @@
             
             <div class="border-t border-gray-800 mt-12 pt-8 text-center text-gray-500 text-sm">
                 <p>Fabrication française | Matériaux éco-responsables | Garantie 5 ans</p>
+                <p class="mt-2">Anciennement Julien_Rideau - Nouveau nom : <span class="text-accent">New Grace Service (NGS)</span></p>
             </div>
         </div>
     </footer>
