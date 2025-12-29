@@ -25,7 +25,7 @@ if (isset($_SESSION['flash_message'])) {
 if (isset($_GET['action']) && $_GET['action'] == 'get_produit' && isset($_GET['matricule'])) {
     $produitMatricule = $_GET['matricule'];
     try {
-        $query = $pdo->prepare("SELECT matricule, designation, actif FROM produits WHERE matricule = ? AND statut = 0");
+        $query = $pdo->prepare("SELECT matricule, designation, umProduit, actif FROM produits WHERE matricule = ? AND statut = 0");
         $query->execute([$produitMatricule]);
         $produit = $query->fetch(PDO::FETCH_ASSOC);
 
@@ -44,28 +44,6 @@ if (isset($_GET['action']) && $_GET['action'] == 'get_produit' && isset($_GET['m
     exit;
 }
 
-// Fonction pour générer le prochain matricule
-function genererMatricule($pdo) {
-    // Récupérer le dernier matricule
-    $query = $pdo->query("SELECT matricule FROM produits WHERE matricule LIKE 'Rid-%' ORDER BY matricule DESC LIMIT 1");
-    $lastMatricule = $query->fetchColumn();
-    
-    if ($lastMatricule) {
-        // Extraire le numéro et l'incrémenter
-        $lastNumber = intval(substr($lastMatricule, 4)); // "Rid-001" -> "001" -> 1
-        $newNumber = $lastNumber + 1;
-    } else {
-        // Premier produit
-        $newNumber = 1;
-    }
-    
-    // Formater avec 3 chiffres
-    return 'Rid-' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
-}
-
-// Récupérer le prochain matricule pour l'affichage
-$prochainMatricule = genererMatricule($pdo);
-
 // Pagination
 $limit = 10;
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
@@ -78,7 +56,13 @@ try {
     $totalPages = ceil($total_produits / $limit);
 
     // Requête paginée
-    $query = $pdo->prepare("SELECT * FROM produits WHERE statut = 0 ORDER BY actif DESC, date_creation DESC LIMIT :limit OFFSET :offset");
+    $query = $pdo->prepare("SELECT *, 
+        CASE 
+            WHEN umProduit = 'metres' THEN 'mètres'
+            WHEN umProduit = 'pieces' THEN 'pièces'
+            ELSE umProduit 
+        END as umProduitDisplay 
+        FROM produits WHERE statut = 0 ORDER BY actif DESC, date_creation DESC LIMIT :limit OFFSET :offset");
     $query->bindValue(':limit', $limit, PDO::PARAM_INT);
     $query->bindValue(':offset', $offset, PDO::PARAM_INT);
     $query->execute();
@@ -86,6 +70,10 @@ try {
     
     // Compter les actifs pour la carte de stats
     $active_count_total = $pdo->query("SELECT COUNT(*) FROM produits WHERE actif = 1 AND statut = 0")->fetchColumn();
+    
+    // Statistiques par type de produit
+    $produits_metres = $pdo->query("SELECT COUNT(*) FROM produits WHERE umProduit = 'metres' AND statut = 0")->fetchColumn();
+    $produits_pieces = $pdo->query("SELECT COUNT(*) FROM produits WHERE umProduit = 'pieces' AND statut = 0")->fetchColumn();
 
 } catch (PDOException $e) {
     $_SESSION['flash_message'] = [
@@ -93,6 +81,8 @@ try {
         'type' => "error"
     ];
     $active_count_total = 0;
+    $produits_metres = 0;
+    $produits_pieces = 0;
 }
 ?>
 
@@ -437,6 +427,55 @@ try {
             display: inline-block;
             margin-top: 5px;
         }
+        
+        /* Styles pour les boutons radio personnalisés */
+        .unit-option {
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .unit-option input[type="radio"]:checked ~ .checkmark {
+            display: flex;
+        }
+        
+        .checkmark {
+            display: none;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 20px;
+            height: 20px;
+            background: #7B61FF;
+            border-radius: 50%;
+            color: white;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+        }
+        
+        .unit-option input[type="radio"]:checked ~ .unit-content {
+            border-color: #7B61FF;
+            background-color: rgba(123, 97, 255, 0.05);
+        }
+        
+        /* Badge pour type de produit */
+        .badge-metres {
+            background-color: #E0F2FE;
+            color: #0369A1;
+            border: 1px solid #BAE6FD;
+        }
+        
+        .badge-pieces {
+            background-color: #DCFCE7;
+            color: #166534;
+            border: 1px solid #BBF7D0;
+        }
+        
+        .badge-rideau {
+            background-color: #FEF3C7;
+            color: #92400E;
+            border: 1px solid #FDE68A;
+        }
     </style>
 </head>
 
@@ -482,23 +521,27 @@ try {
                 <a href="boutiques.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-store w-5 text-gray-300"></i>
                     <span>Boutiques</span>
-                </a>
-                <a href="rapports.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
-                    <span>Rapports</span>
-                </a>
+                </a>                
                 <a href="produits.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10">
                     <i class="fas fa-box w-5 text-white"></i>
                     <span>Produits</span>
                     <span class="notification-badge"><?= $total_produits ?></span>
                 </a>
+                <a href="stocks.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-warehouse w-5 text-white"></i>
+                    <span>Stocks</span>
+                </a>
+                <a href="transferts.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-exchange-alt w-5 text-gray-300"></i>
+                    <span>Transferts</span>
+                </a>
                 <a href="utilisateurs.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-users w-5 text-gray-300"></i>
                     <span>Utilisateurs</span>
                 </a>
-                <a href="parametres.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-cog w-5 text-gray-300"></i>
-                    <span>Paramètres</span>
+                <a href="rapports.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
+                    <span>Rapports</span>
                 </a>
             </nav>
 
@@ -515,13 +558,13 @@ try {
                 <div class="flex justify-between items-center">
                     <div>
                         <h1 class="text-xl md:text-2xl font-bold text-gray-900">Gestion des produits - NGS</h1>
-                        <p class="text-gray-600 text-sm md:text-base">New Grace Service - Catalogue de rideaux</p>
+                        <p class="text-gray-600 text-sm md:text-base">New Grace Service - Catalogue des produits</p>
                     </div>
                     <div class="flex items-center space-x-4">
                         <button onclick="openProduitModal()"
                             class="px-4 py-3 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
                             <i class="fas fa-plus"></i>
-                            <span class="hidden md:inline">Nouveau rideau</span>
+                            <span class="hidden md:inline">Nouveau produit</span>
                             <span class="md:hidden">Nouveau</span>
                         </button>
                     </div>
@@ -556,15 +599,6 @@ try {
                     </div>
                 <?php endif; ?>
 
-                <!-- <div class="next-matricule animate-fade-in">
-                    <div class="flex items-center justify-center space-x-2">
-                        <i class="fas fa-tags text-xl"></i>
-                        <span class="font-medium">Prochain matricule disponible :</span>
-                    </div>
-                    <div class="matricule-code"><?= htmlspecialchars($prochainMatricule) ?></div>
-                    <p class="text-sm mt-2 opacity-90">Le matricule sera généré automatiquement lors de l'ajout d'un nouveau produit</p>
-                </div> -->
-
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
                     <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-blue-500 animate-fade-in">
                         <div class="flex items-center justify-between mb-4">
@@ -574,7 +608,7 @@ try {
                             <span class="text-sm font-medium text-blue-600">Total</span>
                         </div>
                         <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_produits ?></h3>
-                        <p class="text-gray-600">Rideaux enregistrés</p>
+                        <p class="text-gray-600">Produits enregistrés</p>
                     </div>
 
                     <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-green-500 animate-fade-in" style="animation-delay: 0.1s">
@@ -585,29 +619,29 @@ try {
                             <span class="text-sm font-medium text-green-600">Actifs</span>
                         </div>
                         <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $active_count_total ?></h3>
-                        <p class="text-gray-600">Rideaux disponibles</p>
+                        <p class="text-gray-600">Produits disponibles</p>
                     </div>
 
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-red-500 animate-fade-in" style="animation-delay: 0.2s">
+                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-cyan-500 animate-fade-in" style="animation-delay: 0.2s">
                         <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center">
-                                <i class="fas fa-times-circle text-red-600 text-xl"></i>
+                            <div class="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center">
+                                <i class="fas fa-ruler-combined text-cyan-600 text-xl"></i>
                             </div>
-                            <span class="text-sm font-medium text-red-600">Inactifs</span>
+                            <span class="text-sm font-medium text-cyan-600">Mètres</span>
                         </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_produits - $active_count_total ?></h3>
-                        <p class="text-gray-600">Rideaux désactivés</p>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $produits_metres ?></h3>
+                        <p class="text-gray-600">Rideaux (au mètre)</p>
                     </div>
 
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-purple-500 animate-fade-in" style="animation-delay: 0.3s">
+                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-emerald-500 animate-fade-in" style="animation-delay: 0.3s">
                         <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                                <i class="fas fa-file-alt text-purple-600 text-xl"></i>
+                            <div class="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
+                                <i class="fas fa-cube text-emerald-600 text-xl"></i>
                             </div>
-                            <span class="text-sm font-medium text-purple-600">Pagination</span>
+                            <span class="text-sm font-medium text-emerald-600">Pièces</span>
                         </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $page ?></h3>
-                        <p class="text-gray-600">sur <?= $totalPages ?> pages</p>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $produits_pieces ?></h3>
+                        <p class="text-gray-600">Produits divers</p>
                     </div>
                 </div>
 
@@ -635,7 +669,7 @@ try {
 
                 <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in" style="animation-delay: 0.5s">
                     <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                        <h2 class="text-lg font-semibold text-gray-900">Liste des rideaux - NGS</h2>
+                        <h2 class="text-lg font-semibold text-gray-900">Liste des produits - NGS</h2>
                     </div>
 
                     <div class="overflow-x-auto">
@@ -644,29 +678,48 @@ try {
                                 <tr>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Matricule</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Désignation</th>
-                                    <!-- <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Création</th> -->
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unité</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200" id="tableBody">
-                                <?php foreach ($produits as $index => $produit): ?>
+                                <?php foreach ($produits as $index => $produit): 
+                                    $isRideau = substr($produit['matricule'], 0, 3) === 'Rid';
+                                ?>
                                     <tr class="produit-row hover:bg-gray-50 transition-colors fade-in-row"
                                         data-produit-matricule="<?= htmlspecialchars(strtolower($produit['matricule'])) ?>"
                                         data-produit-designation="<?= htmlspecialchars(strtolower($produit['designation'])) ?>"
                                         style="animation-delay: <?= $index * 0.05 ?>s">
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 produit-matricule">
                                             <div class="flex items-center">
-                                                <div class="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center mr-3">
-                                                    <i class="fas fa-tag text-indigo-600 text-xs"></i>
+                                                <div class="w-8 h-8 rounded-full <?= $isRideau ? 'bg-indigo-100' : 'bg-emerald-100' ?> flex items-center justify-center mr-3">
+                                                    <i class="fas fa-tag <?= $isRideau ? 'text-indigo-600' : 'text-emerald-600' ?> text-xs"></i>
                                                 </div>
-                                                <span class="font-mono font-bold"><?= htmlspecialchars($produit['matricule']) ?></span>
+                                                <div>
+                                                    <span class="font-mono font-bold"><?= htmlspecialchars($produit['matricule']) ?></span>
+                                                    <div class="text-xs text-gray-500">
+                                                        <?= date('d/m/Y', strtotime($produit['date_creation'])) ?>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 produit-designation">
+                                        <td class="px-6 py-4 text-sm text-gray-900 produit-designation">
                                             <?= htmlspecialchars($produit['designation']) ?>
                                         </td>
-                                        <!-- <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?= date('d/m/Y', strtotime($produit['date_creation'])) ?></td> -->
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium <?= $produit['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces' ?>">
+                                                <i class="<?= $produit['umProduit'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube' ?> mr-1 text-xs"></i>
+                                                <?= $produit['umProduitDisplay'] ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium badge-rideau">
+                                                <i class="fas <?= $isRideau ? 'fa-window-maximize' : 'fa-box' ?> mr-1 text-xs"></i>
+                                                <?= $isRideau ? 'Rideau' : 'Produit' ?>
+                                            </span>
+                                        </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <span class="status-badge <?= $produit['actif'] ? 'status-active' : 'status-inactive' ?> inline-flex items-center">
                                                 <i class="fas fa-circle text-xs mr-1"></i>
@@ -709,13 +762,13 @@ try {
                     <?php if (empty($produits) && $page == 1): ?>
                         <div class="text-center py-12">
                             <div class="bg-gray-50 rounded-2xl p-8 max-w-md mx-auto shadow-soft">
-                                <i class="fas fa-tshirt text-6xl text-gray-400 mb-4"></i>
-                                <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun rideau enregistré</h3>
-                                <p class="text-gray-600 mb-4">Commencez par ajouter votre premier rideau</p>
+                                <i class="fas fa-boxes text-6xl text-gray-400 mb-4"></i>
+                                <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun produit enregistré</h3>
+                                <p class="text-gray-600 mb-4">Commencez par ajouter votre premier produit</p>
                                 <button onclick="openProduitModal()"
                                     class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 mx-auto shadow-md">
                                     <i class="fas fa-plus"></i>
-                                    <span>Ajouter un rideau</span>
+                                    <span>Ajouter un produit</span>
                                 </button>
                             </div>
                         </div>
@@ -766,7 +819,7 @@ try {
     <div id="produitModal" class="modal transition-all duration-300 ease-in-out">
         <div class="modal-content slide-down p-6">
             <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <h3 class="text-xl font-bold text-gray-900" id="modalTitle">Ajouter un nouveau rideau - NGS</h3>
+                <h3 class="text-xl font-bold text-gray-900" id="modalTitle">Ajouter un nouveau produit - NGS</h3>
                 <button onclick="closeProduitModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
                     <i class="fas fa-times text-2xl"></i>
                 </button>
@@ -780,28 +833,79 @@ try {
                         <label for="matricule" class="block text-sm font-medium text-gray-700 mb-1">Matricule</label>
                         <input type="text" name="matricule" id="matricule" readonly
                                class="w-full border-gray-300 bg-gray-100 rounded-lg shadow-sm p-3 cursor-not-allowed">
-                        <p class="text-xs text-gray-500 mt-1">Identifiant unique du rideau (généré automatiquement)</p>
+                        <p class="text-xs text-gray-500 mt-1">Identifiant unique du produit (généré automatiquement)</p>
                     </div>
                     
                     <div>
-                        <label for="designation" class="block text-sm font-medium text-gray-700 mb-1">Désignation du rideau *</label>
+                        <label for="designation" class="block text-sm font-medium text-gray-700 mb-1">Désignation du produit *</label>
                         <input type="text" name="designation" id="designation" required
                                class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
-                               placeholder="Ex: Rideau en velours rouge, Rideau occultant noir...">
+                               placeholder="Ex: Rideau en velours rouge, Coussin décoratif, Tringle à rideau...">
+                    </div>
+                    
+                    <!-- CHAMP : Unité de mesure -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Unité de mesure *</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <label class="unit-option">
+                                <input type="radio" name="umProduit" value="metres" class="sr-only" id="umMetres">
+                                <div class="unit-content border-2 border-gray-300 rounded-lg p-4 hover:border-blue-500 transition-colors h-full">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                            <i class="fas fa-ruler-combined text-blue-600"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-900">Mètres</p>
+                                            <p class="text-xs text-gray-500">Pour les rideaux</p>
+                                        </div>
+                                    </div>
+                                    <div class="checkmark">
+                                        <i class="fas fa-check"></i>
+                                    </div>
+                                    <div class="mt-2 text-xs text-blue-600">
+                                        Matricule: Rid-XXX
+                                    </div>
+                                </div>
+                            </label>
+                            <label class="unit-option">
+                                <input type="radio" name="umProduit" value="pieces" class="sr-only" id="umPieces" checked>
+                                <div class="unit-content border-2 border-gray-300 rounded-lg p-4 hover:border-green-500 transition-colors h-full">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                                            <i class="fas fa-box text-green-600"></i>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium text-gray-900">Pièces</p>
+                                            <p class="text-xs text-gray-500">Autres produits</p>
+                                        </div>
+                                    </div>
+                                    <div class="checkmark">
+                                        <i class="fas fa-check"></i>
+                                    </div>
+                                    <div class="mt-2 text-xs text-green-600">
+                                        Matricule: Pcs-XXX
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
                     </div>
                     
                     <div class="flex items-center space-x-2">
                         <input type="checkbox" name="actif" id="actif" value="1" checked
                                class="h-4 w-4 text-secondary border-gray-300 rounded focus:ring-secondary">
-                        <label for="actif" class="text-sm font-medium text-gray-700">Rideau actif (disponible à la vente)</label>
+                        <label for="actif" class="text-sm font-medium text-gray-700">Produit actif (disponible à la vente)</label>
                     </div>
                     
                     <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <div class="flex items-start space-x-3">
                             <i class="fas fa-info-circle text-blue-500 mt-0.5"></i>
                             <div>
-                                <p class="text-sm text-blue-700 font-medium">Le matricule sera généré automatiquement</p>
-                                <p class="text-xs text-blue-600 mt-1">Format : Rid-001, Rid-002, etc.</p>
+                                <p class="text-sm text-blue-700 font-medium">Informations importantes</p>
+                                <ul class="text-xs text-blue-600 mt-1 list-disc pl-4 space-y-1">
+                                    <li>Le matricule sera généré automatiquement selon l'unité choisie</li>
+                                    <li><strong>Mètres :</strong> Pour les rideaux (vente au mètre linéaire) → Matricule: Rid-001, Rid-002...</li>
+                                    <li><strong>Pièces :</strong> Pour les autres produits (coussin, accessoires...) → Matricule: Pcs-001, Pcs-002...</li>
+                                </ul>
                             </div>
                         </div>
                     </div>
@@ -814,7 +918,7 @@ try {
                     </button>
                     <button type="submit" name="ajouter_produit" id="submitButton"
                             class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                        Enregistrer le rideau
+                        Enregistrer le produit
                     </button>
                 </div>
             </form>
@@ -833,7 +937,7 @@ try {
             <div class="text-center py-4">
                 <i id="toggleIcon" class="fas fa-power-off text-5xl mb-4 text-gray-500"></i>
                 <p class="text-lg font-medium text-gray-800 mb-2">Voulez-vous vraiment continuer ?</p>
-                <p class="text-gray-600" id="toggleModalText">Le statut du rideau **Designation** va être modifié.</p>
+                <p class="text-gray-600" id="toggleModalText">Le statut du produit **Designation** va être modifié.</p>
             </div>
 
             <form id="toggleForm" method="POST" action="../models/traitement/produit-post.php" class="mt-6 flex justify-center space-x-3">
@@ -862,7 +966,7 @@ try {
             <div class="text-center py-4">
                 <i class="fas fa-trash-alt text-5xl mb-4 text-red-500"></i>
                 <p class="text-lg font-bold text-red-700 mb-2">ATTENTION ! Suppression (Archivage)</p>
-                <p class="text-gray-600 mb-4" id="deleteModalText">Vous êtes sur le point d'archiver le rideau **Designation**. Il ne sera plus visible, mais ses données resteront en base de données (Soft Delete).</p>
+                <p class="text-gray-600 mb-4" id="deleteModalText">Vous êtes sur le point d'archiver le produit **Designation**. Il ne sera plus visible, mais ses données resteront en base de données (Soft Delete).</p>
             </div>
 
             <form id="deleteForm" method="POST" action="../models/traitement/produit-post.php" class="mt-6 flex justify-center space-x-3">
@@ -873,7 +977,7 @@ try {
                 </button>
                 <button type="submit" name="supprimer_produit"
                         class="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                    Oui, Archiver ce rideau
+                    Oui, Archiver ce produit
                 </button>
             </form>
         </div>
@@ -985,8 +1089,8 @@ try {
             
             if (matricule) {
                 // Mode Modification
-                modalTitle.textContent = "Modifier le rideau " + matricule + " - NGS";
-                submitButton.textContent = "Modifier le rideau";
+                modalTitle.textContent = "Modifier le produit " + matricule + " - NGS";
+                submitButton.textContent = "Modifier le produit";
                 submitButton.name = 'modifier_produit';
                 matriculeOriginal.value = matricule;
                 
@@ -1001,6 +1105,19 @@ try {
                         if (data.success) {
                             document.getElementById('designation').value = data.produit.designation;
                             document.getElementById('actif').checked = data.produit.actif == 1;
+                            
+                            // Définir l'unité de mesure
+                            if (data.produit.umProduit) {
+                                if (data.produit.umProduit === 'metres') {
+                                    document.getElementById('umMetres').checked = true;
+                                } else {
+                                    document.getElementById('umPieces').checked = true;
+                                }
+                                // Forcer l'affichage des checkmarks
+                                document.querySelectorAll('.unit-option input[type="radio"]').forEach(radio => {
+                                    radio.dispatchEvent(new Event('change'));
+                                });
+                            }
                         } else {
                             alert(data.message);
                             closeProduitModal();
@@ -1014,15 +1131,24 @@ try {
 
             } else {
                 // Mode Ajout
-                modalTitle.textContent = "Ajouter un nouveau rideau - NGS";
-                submitButton.textContent = "Enregistrer le rideau";
+                modalTitle.textContent = "Ajouter un nouveau produit - NGS";
+                submitButton.textContent = "Enregistrer le produit";
                 submitButton.name = 'ajouter_produit';
                 matriculeOriginal.value = '';
                 
                 // Cacher le champ matricule (généré automatiquement)
                 matriculeField.style.display = 'none';
                 document.getElementById('actif').checked = true;
+                // Par défaut : pièces
+                document.getElementById('umPieces').checked = true;
             }
+
+            // Forcer l'affichage des checkmarks
+            setTimeout(() => {
+                document.querySelectorAll('.unit-option input[type="radio"]').forEach(radio => {
+                    radio.dispatchEvent(new Event('change'));
+                });
+            }, 100);
 
             produitModal.classList.add('show');
         }
@@ -1030,6 +1156,25 @@ try {
         function closeProduitModal() {
             produitModal.classList.remove('show');
         }
+
+        // Gestion des changements d'état pour les options d'unité
+        document.querySelectorAll('.unit-option input[type="radio"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                // Réinitialiser toutes les options
+                document.querySelectorAll('.unit-option .unit-content').forEach(content => {
+                    content.classList.remove('border-blue-500', 'border-green-500', 'bg-blue-50', 'bg-green-50');
+                });
+                
+                // Appliquer les styles à l'option sélectionnée
+                const parent = this.closest('.unit-option');
+                const content = parent.querySelector('.unit-content');
+                if (this.value === 'metres') {
+                    content.classList.add('border-blue-500', 'bg-blue-50');
+                } else {
+                    content.classList.add('border-green-500', 'bg-green-50');
+                }
+            });
+        });
 
         // --- GESTION DE LA MODALE TOGGLE ---
         const toggleModal = document.getElementById('toggleModal');
@@ -1046,7 +1191,7 @@ try {
             const buttonText = actif ? 'Oui, Désactiver' : 'Oui, Activer';
 
             toggleModalTitle.textContent = "Confirmer la " + action + " - NGS";
-            toggleModalText.innerHTML = `Le statut du rideau <strong>${designation}</strong> (${matricule}) va passer à <strong>${action}</strong>.<br>Voulez-vous confirmer cette action ?`;
+            toggleModalText.innerHTML = `Le statut du produit <strong>${designation}</strong> (${matricule}) va passer à <strong>${action}</strong>.<br>Voulez-vous confirmer cette action ?`;
             
             toggleIcon.className = `fas fa-power-off text-5xl mb-4 ${iconClass}`;
             
@@ -1067,7 +1212,7 @@ try {
         const deleteProduitMatricule = document.getElementById('deleteProduitMatricule');
 
         function openDeleteModal(matricule, designation) {
-            deleteModalText.innerHTML = `Vous êtes sur le point d'archiver le rideau <strong>${designation}</strong> (${matricule}). Il ne sera plus visible, mais ses données resteront en base de données (Soft Delete). Cette action est réversible uniquement par un administrateur système. Confirmez-vous ?`;
+            deleteModalText.innerHTML = `Vous êtes sur le point d'archiver le produit <strong>${designation}</strong> (${matricule}). Il ne sera plus visible, mais ses données resteront en base de données (Soft Delete). Cette action est réversible uniquement par un administrateur système. Confirmez-vous ?`;
             deleteProduitMatricule.value = matricule;
             deleteModal.classList.add('show');
         }
@@ -1113,6 +1258,13 @@ try {
             const rows = document.querySelectorAll('.fade-in-row');
             rows.forEach((row, index) => {
                 row.style.animationDelay = `${index * 0.05}s`;
+            });
+            
+            // Initialiser les styles des options d'unité
+            document.querySelectorAll('.unit-option input[type="radio"]').forEach(radio => {
+                if (radio.checked) {
+                    radio.dispatchEvent(new Event('change'));
+                }
             });
         });
 

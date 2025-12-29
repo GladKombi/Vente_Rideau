@@ -8,10 +8,14 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'pdg') {
     exit;
 }
 
-// Fonction pour générer le prochain matricule en excluant les produits archivés
-function genererMatricule($pdo) {
-    // Récupérer le dernier matricule parmi les produits actifs (statut = 0)
-    $query = $pdo->query("SELECT matricule FROM produits WHERE matricule LIKE 'Rid-%' AND statut = 0 ORDER BY matricule DESC LIMIT 1");
+// Fonction pour générer le prochain matricule selon le type
+function genererMatricule($pdo, $umProduit) {
+    // Déterminer le préfixe selon l'unité
+    $prefix = $umProduit == 'metres' ? 'Rid-' : 'Pcs-';
+    
+    // Récupérer le dernier matricule selon le type (produits non archivés)
+    $query = $pdo->prepare("SELECT matricule FROM produits WHERE matricule LIKE ? AND statut = 0 ORDER BY matricule DESC LIMIT 1");
+    $query->execute([$prefix . '%']);
     $lastMatricule = $query->fetchColumn();
     
     if ($lastMatricule) {
@@ -20,20 +24,21 @@ function genererMatricule($pdo) {
         $newNumber = $lastNumber + 1;
     } else {
         // Vérifier s'il existe des produits archivés pour continuer la séquence
-        $queryArchived = $pdo->query("SELECT matricule FROM produits WHERE matricule LIKE 'Rid-%' ORDER BY matricule DESC LIMIT 1");
+        $queryArchived = $pdo->prepare("SELECT matricule FROM produits WHERE matricule LIKE ? ORDER BY matricule DESC LIMIT 1");
+        $queryArchived->execute([$prefix . '%']);
         $lastArchivedMatricule = $queryArchived->fetchColumn();
         
         if ($lastArchivedMatricule) {
             $lastNumber = intval(substr($lastArchivedMatricule, 4));
             $newNumber = $lastNumber + 1;
         } else {
-            // Premier produit
+            // Premier produit de ce type
             $newNumber = 1;
         }
     }
     
     // Formater avec 3 chiffres
-    return 'Rid-' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
+    return $prefix . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
 }
 
 // --- AJOUT D'UN NOUVEAU PRODUIT ---
@@ -41,12 +46,23 @@ if (isset($_POST['ajouter_produit'])) {
     try {
         // Validation des données
         $designation = trim($_POST['designation']);
+        $umProduit = $_POST['umProduit'] ?? 'pieces'; // Par défaut : pièces
         $actif = isset($_POST['actif']) ? 1 : 0;
         
         // Vérifier que la désignation n'est pas vide
         if (empty($designation)) {
             $_SESSION['flash_message'] = [
-                'text' => 'La désignation du rideau est obligatoire',
+                'text' => 'La désignation du produit est obligatoire',
+                'type' => 'error'
+            ];
+            header('Location: ../../views/produits.php');
+            exit;
+        }
+        
+        // Validation de l'unité de mesure
+        if (!in_array($umProduit, ['metres', 'pieces'])) {
+            $_SESSION['flash_message'] = [
+                'text' => 'Unité de mesure invalide',
                 'type' => 'error'
             ];
             header('Location: ../../views/produits.php');
@@ -60,28 +76,29 @@ if (isset($_POST['ajouter_produit'])) {
         
         if ($designationExists > 0) {
             $_SESSION['flash_message'] = [
-                'text' => 'Un rideau avec cette désignation existe déjà',
+                'text' => 'Un produit avec cette désignation existe déjà',
                 'type' => 'warning'
             ];
             header('Location: ../../views/produits.php');
             exit;
         }
         
-        // Générer le matricule automatiquement
-        $matricule = genererMatricule($pdo);
+        // Générer le matricule automatiquement selon le type
+        $matricule = genererMatricule($pdo, $umProduit);
         
-        // Préparation de la requête d'insertion - statut = 0 par défaut
-        $query = $pdo->prepare("INSERT INTO produits (matricule, designation, actif, statut) VALUES (?, ?, ?, 0)");
-        $result = $query->execute([$matricule, $designation, $actif]);
+        // Préparation de la requête d'insertion
+        $query = $pdo->prepare("INSERT INTO produits (matricule, designation, umProduit, actif, statut) VALUES (?, ?, ?, ?, 0)");
+        $result = $query->execute([$matricule, $designation, $umProduit, $actif]);
         
         if ($result && $query->rowCount() > 0) {
+            $typeProduit = $umProduit == 'metres' ? 'rideau (au mètre)' : 'produit (à la pièce)';
             $_SESSION['flash_message'] = [
-                'text' => 'Rideau ajouté avec succès ! Matricule : ' . $matricule,
+                'text' => 'Produit ajouté avec succès ! Matricule : ' . $matricule . ' - Type : ' . $typeProduit,
                 'type' => 'success'
             ];
         } else {
             $_SESSION['flash_message'] = [
-                'text' => 'Erreur lors de l\'ajout du rideau',
+                'text' => 'Erreur lors de l\'ajout du produit',
                 'type' => 'error'
             ];
         }
@@ -110,26 +127,37 @@ if (isset($_POST['modifier_produit'])) {
     try {
         $matricule_original = $_POST['matricule_original'];
         $designation = trim($_POST['designation']);
+        $umProduit = $_POST['umProduit'] ?? 'pieces';
         $actif = isset($_POST['actif']) ? 1 : 0;
         
         // Vérifier que la désignation n'est pas vide
         if (empty($designation)) {
             $_SESSION['flash_message'] = [
-                'text' => 'La désignation du rideau est obligatoire',
+                'text' => 'La désignation du produit est obligatoire',
                 'type' => 'error'
             ];
             header('Location: ../../views/produits.php');
             exit;
         }
         
-        // Vérifier que le produit existe et n'est pas archivé (statut = 0)
-        $checkQuery = $pdo->prepare("SELECT designation FROM produits WHERE matricule = ? AND statut = 0");
+        // Validation de l'unité de mesure
+        if (!in_array($umProduit, ['metres', 'pieces'])) {
+            $_SESSION['flash_message'] = [
+                'text' => 'Unité de mesure invalide',
+                'type' => 'error'
+            ];
+            header('Location: ../../views/produits.php');
+            exit;
+        }
+        
+        // Vérifier que le produit existe et n'est pas archivé
+        $checkQuery = $pdo->prepare("SELECT matricule, designation FROM produits WHERE matricule = ? AND statut = 0");
         $checkQuery->execute([$matricule_original]);
         $existingProduit = $checkQuery->fetch(PDO::FETCH_ASSOC);
         
         if (!$existingProduit) {
             $_SESSION['flash_message'] = [
-                'text' => 'Le rideau n\'existe pas ou a été archivé',
+                'text' => 'Le produit n\'existe pas ou a été archivé',
                 'type' => 'error'
             ];
             header('Location: ../../views/produits.php');
@@ -143,27 +171,67 @@ if (isset($_POST['modifier_produit'])) {
         
         if ($duplicateExists > 0) {
             $_SESSION['flash_message'] = [
-                'text' => 'Un autre rideau utilise déjà cette désignation',
+                'text' => 'Un autre produit utilise déjà cette désignation',
                 'type' => 'warning'
             ];
             header('Location: ../../views/produits.php');
             exit;
         }
         
-        // Mise à jour du produit - uniquement les champs modifiables
-        $query = $pdo->prepare("UPDATE produits SET designation = ?, actif = ?, date_creation = date_creation WHERE matricule = ? AND statut = 0");
-        $result = $query->execute([$designation, $actif, $matricule_original]);
+        // Vérifier si l'unité a changé (ce qui nécessiterait un nouveau matricule)
+        $currentProduitQuery = $pdo->prepare("SELECT umProduit FROM produits WHERE matricule = ?");
+        $currentProduitQuery->execute([$matricule_original]);
+        $currentUmProduit = $currentProduitQuery->fetchColumn();
         
-        if ($result && $query->rowCount() > 0) {
-            $_SESSION['flash_message'] = [
-                'text' => 'Rideau modifié avec succès !',
-                'type' => 'success'
-            ];
+        if ($currentUmProduit != $umProduit) {
+            // L'unité a changé, nous devons générer un nouveau matricule
+            $newMatricule = genererMatricule($pdo, $umProduit);
+            
+            // Vérifier si le nouveau matricule existe déjà
+            $checkNewMatricule = $pdo->prepare("SELECT COUNT(*) FROM produits WHERE matricule = ?");
+            $checkNewMatricule->execute([$newMatricule]);
+            $newMatriculeExists = $checkNewMatricule->fetchColumn();
+            
+            if ($newMatriculeExists > 0) {
+                $_SESSION['flash_message'] = [
+                    'text' => 'Erreur : le matricule généré existe déjà. Veuillez contacter l\'administrateur.',
+                    'type' => 'error'
+                ];
+                header('Location: ../../views/produits.php');
+                exit;
+            }
+            
+            // Mise à jour avec nouveau matricule
+            $query = $pdo->prepare("UPDATE produits SET matricule = ?, designation = ?, umProduit = ?, actif = ? WHERE matricule = ? AND statut = 0");
+            $result = $query->execute([$newMatricule, $designation, $umProduit, $actif, $matricule_original]);
+            
+            if ($result && $query->rowCount() > 0) {
+                $_SESSION['flash_message'] = [
+                    'text' => 'Produit modifié avec succès ! Nouveau matricule : ' . $newMatricule . ' (Unité changée de ' . $currentUmProduit . ' à ' . $umProduit . ')',
+                    'type' => 'success'
+                ];
+            } else {
+                $_SESSION['flash_message'] = [
+                    'text' => 'Aucune modification effectuée',
+                    'type' => 'info'
+                ];
+            }
         } else {
-            $_SESSION['flash_message'] = [
-                'text' => 'Aucune modification effectuée',
-                'type' => 'info'
-            ];
+            // L'unité n'a pas changé, mise à jour normale
+            $query = $pdo->prepare("UPDATE produits SET designation = ?, umProduit = ?, actif = ? WHERE matricule = ? AND statut = 0");
+            $result = $query->execute([$designation, $umProduit, $actif, $matricule_original]);
+            
+            if ($result && $query->rowCount() > 0) {
+                $_SESSION['flash_message'] = [
+                    'text' => 'Produit modifié avec succès !',
+                    'type' => 'success'
+                ];
+            } else {
+                $_SESSION['flash_message'] = [
+                    'text' => 'Aucune modification effectuée',
+                    'type' => 'info'
+                ];
+            }
         }
         
     } catch (PDOException $e) {
@@ -182,14 +250,14 @@ if (isset($_POST['toggle_actif'])) {
     try {
         $matricule = $_POST['matricule'];
         
-        // Vérifier que le produit existe et n'est pas archivé (statut = 0)
+        // Vérifier que le produit existe et n'est pas archivé
         $checkQuery = $pdo->prepare("SELECT designation, actif FROM produits WHERE matricule = ? AND statut = 0");
         $checkQuery->execute([$matricule]);
         $produit = $checkQuery->fetch(PDO::FETCH_ASSOC);
         
         if (!$produit) {
             $_SESSION['flash_message'] = [
-                'text' => 'Rideau non trouvé ou archivé',
+                'text' => 'Produit non trouvé ou archivé',
                 'type' => 'error'
             ];
             header('Location: ../../views/produits.php');
@@ -206,7 +274,7 @@ if (isset($_POST['toggle_actif'])) {
         
         if ($result && $updateQuery->rowCount() > 0) {
             $_SESSION['flash_message'] = [
-                'text' => 'Rideau "' . $produit['designation'] . '" ' . $action . ' avec succès !',
+                'text' => 'Produit "' . $produit['designation'] . '" ' . $action . ' avec succès !',
                 'type' => 'success'
             ];
         } else {
@@ -233,14 +301,28 @@ if (isset($_POST['supprimer_produit'])) {
         $matricule = $_POST['matricule'];
         
         // Vérifier que le produit existe et n'est pas déjà archivé
-        $checkQuery = $pdo->prepare("SELECT designation FROM produits WHERE matricule = ? AND statut = 0");
+        $checkQuery = $pdo->prepare("SELECT designation, umProduit FROM produits WHERE matricule = ? AND statut = 0");
         $checkQuery->execute([$matricule]);
         $produit = $checkQuery->fetch(PDO::FETCH_ASSOC);
         
         if (!$produit) {
             $_SESSION['flash_message'] = [
-                'text' => 'Rideau non trouvé ou déjà archivé',
+                'text' => 'Produit non trouvé ou déjà archivé',
                 'type' => 'warning'
+            ];
+            header('Location: ../../views/produits.php');
+            exit;
+        }
+        
+        // Vérifier si le produit est utilisé dans des stocks
+        $checkStockQuery = $pdo->prepare("SELECT COUNT(*) FROM stock WHERE produit_matricule = ? AND statut = 0");
+        $checkStockQuery->execute([$matricule]);
+        $stockCount = $checkStockQuery->fetchColumn();
+        
+        if ($stockCount > 0) {
+            $_SESSION['flash_message'] = [
+                'text' => 'Impossible d\'archiver ce produit : il est utilisé dans ' . $stockCount . ' entrée(s) de stock.',
+                'type' => 'error'
             ];
             header('Location: ../../views/produits.php');
             exit;
@@ -251,8 +333,9 @@ if (isset($_POST['supprimer_produit'])) {
         $result = $updateQuery->execute([$matricule]);
         
         if ($result && $updateQuery->rowCount() > 0) {
+            $typeProduit = $produit['umProduit'] == 'metres' ? 'rideau' : 'produit';
             $_SESSION['flash_message'] = [
-                'text' => '📁 Rideau "' . $produit['designation'] . '" archivé avec succès !',
+                'text' => '📁 ' . ucfirst($typeProduit) . ' "' . $produit['designation'] . '" archivé avec succès !',
                 'type' => 'success'
             ];
         } else {
@@ -278,27 +361,42 @@ if (isset($_POST['restaurer_produit'])) {
     try {
         $matricule = $_POST['matricule'];
         
-        // Vérifier que le produit existe et est archivé (statut = 1)
-        $checkQuery = $pdo->prepare("SELECT designation FROM produits WHERE matricule = ? AND statut = 1");
+        // Vérifier que le produit existe et est archivé
+        $checkQuery = $pdo->prepare("SELECT designation, umProduit FROM produits WHERE matricule = ? AND statut = 1");
         $checkQuery->execute([$matricule]);
         $produit = $checkQuery->fetch(PDO::FETCH_ASSOC);
         
         if (!$produit) {
             $_SESSION['flash_message'] = [
-                'text' => 'Rideau non trouvé ou non archivé',
+                'text' => 'Produit non trouvé ou non archivé',
                 'type' => 'warning'
             ];
             header('Location: ../../views/produits.php');
             exit;
         }
         
+        // Vérifier si un produit actif avec le même matricule existe (cas improbable)
+        $checkActiveQuery = $pdo->prepare("SELECT COUNT(*) FROM produits WHERE matricule = ? AND statut = 0");
+        $checkActiveQuery->execute([$matricule]);
+        $activeExists = $checkActiveQuery->fetchColumn();
+        
+        if ($activeExists > 0) {
+            $_SESSION['flash_message'] = [
+                'text' => 'Impossible de restaurer : un produit actif avec ce matricule existe déjà',
+                'type' => 'error'
+            ];
+            header('Location: ../../views/produits.php');
+            exit;
+        }
+        
         // Restauration : Mise à jour du statut à 0 (actif)
-        $updateQuery = $pdo->prepare("UPDATE produits SET statut = 0 WHERE matricule = ?");
+        $updateQuery = $pdo->prepare("UPDATE produits SET statut = 0, actif = 1 WHERE matricule = ?");
         $result = $updateQuery->execute([$matricule]);
         
         if ($result && $updateQuery->rowCount() > 0) {
+            $typeProduit = $produit['umProduit'] == 'metres' ? 'rideau' : 'produit';
             $_SESSION['flash_message'] = [
-                'text' => '🔄 Rideau "' . $produit['designation'] . '" restauré avec succès !',
+                'text' => '🔄 ' . ucfirst($typeProduit) . ' "' . $produit['designation'] . '" restauré avec succès !',
                 'type' => 'success'
             ];
         } else {

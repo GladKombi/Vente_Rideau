@@ -21,45 +21,64 @@ if (isset($_SESSION['flash_message'])) {
     unset($_SESSION['flash_message']);
 }
 
-// Récupérer la liste des boutiques
+// Récupérer la liste des boutiques et des stocks disponibles
 try {
     $queryBoutiques = $pdo->prepare("SELECT id, nom FROM boutiques WHERE statut = 0 AND actif = 1 ORDER BY nom");
     $queryBoutiques->execute();
     $boutiques = $queryBoutiques->fetchAll(PDO::FETCH_ASSOC);
     
-    // Récupérer la liste des produits pour le formulaire
-    $queryProduits = $pdo->prepare("
-        SELECT p.matricule, p.designation, p.umProduit,
-               COALESCE(SUM(s.quantite), 0) as quantite_totale
-        FROM produits p
-        LEFT JOIN stock s ON p.matricule = s.produit_matricule AND s.statut = 0
-        WHERE p.statut = 0 AND p.actif = 1
-        GROUP BY p.matricule, p.designation, p.umProduit
-        ORDER BY p.designation
+    // Récupérer les stocks disponibles pour transfert
+    $queryStocks = $pdo->prepare("
+        SELECT s.id, s.produit_matricule, s.quantite, s.boutique_id, 
+               p.designation, p.umProduit,
+               b.nom as boutique_nom
+        FROM stock s 
+        JOIN produits p ON s.produit_matricule = p.matricule 
+        JOIN boutiques b ON s.boutique_id = b.id 
+        WHERE s.statut = 0 
+          AND s.quantite > 0
+          AND s.type_mouvement IN ('approvisionnement', 'transfert')
+        ORDER BY b.nom, p.designation
     ");
-    $queryProduits->execute();
-    $produits = $queryProduits->fetchAll(PDO::FETCH_ASSOC);
-    
+    $queryStocks->execute();
+    $stocks = $queryStocks->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $_SESSION['flash_message'] = [
         'text' => "Erreur lors du chargement des données : " . $e->getMessage(),
         'type' => "error"
     ];
     $boutiques = [];
-    $produits = [];
+    $stocks = [];
 }
 
 // Gestion du formulaire de transfert
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['effectuer_transfert'])) {
     try {
         // Validation des données
-        $produit_matricule = $_POST['produit_matricule'];
-        $boutique_expedition = (int)$_POST['boutique_expedition'];
-        $boutique_destination = (int)$_POST['boutique_destination'];
+        $stock_id = (int)$_POST['stock_id'];
         $quantite_transferee = (float)$_POST['quantite_transferee'];
+        $boutique_destination = (int)$_POST['boutique_destination'];
         
-        // Validation basique
-        if ($boutique_expedition == $boutique_destination) {
+        // Récupérer les informations du stock source
+        $queryStock = $pdo->prepare("
+            SELECT s.*, p.designation, p.umProduit, b.nom as boutique_nom
+            FROM stock s 
+            JOIN produits p ON s.produit_matricule = p.matricule 
+            JOIN boutiques b ON s.boutique_id = b.id 
+            WHERE s.id = ? AND s.statut = 0
+        ");
+        $queryStock->execute([$stock_id]);
+        $stock_source = $queryStock->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$stock_source) {
+            throw new Exception("Stock source introuvable");
+        }
+        
+        if ($stock_source['quantite'] < $quantite_transferee) {
+            throw new Exception("Quantité insuffisante en stock. Quantité disponible : " . $stock_source['quantite']);
+        }
+        
+        if ($stock_source['boutique_id'] == $boutique_destination) {
             throw new Exception("Impossible de transférer vers la même boutique");
         }
         
@@ -67,43 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['effectuer_transfert']
             throw new Exception("La quantité transférée doit être supérieure à 0");
         }
         
-        // Vérifier si le produit existe dans le stock de la boutique expédition
-        $queryStockSource = $pdo->prepare("
-            SELECT s.*, p.designation, p.umProduit
-            FROM stock s 
-            JOIN produits p ON s.produit_matricule = p.matricule 
-            WHERE s.boutique_id = ? 
-              AND s.produit_matricule = ? 
-              AND s.statut = 0
-              AND s.quantite >= ?
-            ORDER BY s.date_creation ASC
-            LIMIT 1
-        ");
-        $queryStockSource->execute([$boutique_expedition, $produit_matricule, $quantite_transferee]);
-        $stock_source = $queryStockSource->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$stock_source) {
-            // Vérifier la quantité totale disponible
-            $queryQuantiteTotale = $pdo->prepare("
-                SELECT SUM(quantite) as quantite_totale
-                FROM stock 
-                WHERE boutique_id = ? 
-                  AND produit_matricule = ? 
-                  AND statut = 0
-            ");
-            $queryQuantiteTotale->execute([$boutique_expedition, $produit_matricule]);
-            $quantite_disponible = $queryQuantiteTotale->fetch(PDO::FETCH_ASSOC);
-            
-            $quantite_totale = $quantite_disponible['quantite_totale'] ?? 0;
-            
-            if ($quantite_totale == 0) {
-                throw new Exception("Ce produit n'existe pas dans le stock de la boutique expédition");
-            } else {
-                throw new Exception("Quantité insuffisante. Quantité disponible : " . number_format($quantite_totale, 3));
-            }
-        }
-        
-        // Vérifier si un stock existe déjà pour ce produit dans la boutique destination
+        // Vérifier si le produit existe déjà dans le stock de destination
         $queryStockDest = $pdo->prepare("
             SELECT id, quantite, prix 
             FROM stock 
@@ -112,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['effectuer_transfert']
               AND statut = 0
             LIMIT 1
         ");
-        $queryStockDest->execute([$boutique_destination, $produit_matricule]);
+        $queryStockDest->execute([$boutique_destination, $stock_source['produit_matricule']]);
         $stock_destination = $queryStockDest->fetch(PDO::FETCH_ASSOC);
         
         // Démarrer la transaction
@@ -124,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['effectuer_transfert']
             SET quantite = quantite - ? 
             WHERE id = ? AND statut = 0
         ");
-        $queryUpdateSource->execute([$quantite_transferee, $stock_source['id']]);
+        $queryUpdateSource->execute([$quantite_transferee, $stock_id]);
         
         // 2. Si le produit existe déjà dans la boutique destination
         if ($stock_destination) {
@@ -145,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['effectuer_transfert']
             ");
             $queryInsertDest->execute([
                 $boutique_destination,
-                $produit_matricule,
+                $stock_source['produit_matricule'],
                 $quantite_transferee,
                 $stock_source['prix'],
                 $stock_source['seuil_alerte_stock']
@@ -159,28 +142,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['effectuer_transfert']
             VALUES (CURDATE(), ?, ?, ?)
         ");
         $queryInsertTransfert->execute([
-            $stock_source['id'],
-            $boutique_expedition,
+            $stock_id,
+            $stock_source['boutique_id'],
             $boutique_destination
         ]);
         
         // Valider la transaction
         $pdo->commit();
         
-        // Récupérer les noms des boutiques pour le message
-        $boutique_exp_nom = '';
-        $boutique_dest_nom = '';
-        
-        foreach ($boutiques as $b) {
-            if ($b['id'] == $boutique_expedition) $boutique_exp_nom = $b['nom'];
-            if ($b['id'] == $boutique_destination) $boutique_dest_nom = $b['nom'];
-        }
-        
         $_SESSION['flash_message'] = [
             'text' => "Transfert effectué avec succès ! " . number_format($quantite_transferee, 3) . " " . 
                      ($stock_source['umProduit'] == 'metres' ? 'mètres' : 'pièces') . 
-                     " de " . $stock_source['designation'] . " transférés de " . 
-                     $boutique_exp_nom . " vers " . $boutique_dest_nom . ".",
+                     " de " . $stock_source['designation'] . " transférés.",
             'type' => "success"
         ];
         
@@ -218,7 +191,7 @@ try {
                p.umProduit,
                b1.nom as boutique_expedition,
                b2.nom as boutique_destination,
-               st.quantite as quantite_transferee,
+               st.quantite as quantite_source,
                st.prix as prix_unitaire
         FROM transferts t 
         JOIN stock s ON t.stock_id = s.id 
@@ -241,8 +214,7 @@ try {
             COUNT(DISTINCT t.Expedition) as boutiques_expeditrices,
             COUNT(DISTINCT t.Destination) as boutiques_destinataires,
             COUNT(DISTINCT p.matricule) as produits_transferes,
-            SUM(s.quantite) as quantite_totale_transferee,
-            SUM(s.quantite * s.prix) as valeur_totale_transferee
+            SUM(s.quantite) as quantite_totale_transferee
         FROM transferts t 
         JOIN stock s ON t.stock_id = s.id 
         JOIN produits p ON s.produit_matricule = p.matricule 
@@ -255,7 +227,6 @@ try {
     $boutiques_destinataires = $stats['boutiques_destinataires'] ?? 0;
     $produits_transferes = $stats['produits_transferes'] ?? 0;
     $quantite_totale_transferee = $stats['quantite_totale_transferee'] ?? 0;
-    $valeur_totale_transferee = $stats['valeur_totale_transferee'] ?? 0;
 
 } catch (PDOException $e) {
     $_SESSION['flash_message'] = [
@@ -266,7 +237,6 @@ try {
     $boutiques_destinataires = 0;
     $produits_transferes = 0;
     $quantite_totale_transferee = 0;
-    $valeur_totale_transferee = 0;
     $transferts = [];
     $total_transferts = 0;
     $totalPages = 1;
@@ -382,7 +352,7 @@ try {
             background-color: white;
             border-radius: 12px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 700px;
+            max-width: 600px;
             width: 90%;
             max-height: 90vh;
             overflow-y: auto;
@@ -401,6 +371,23 @@ try {
                 opacity: 1;
                 transform: translateY(0);
             }
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background-color: #D1FAE5;
+            color: #065F46;
+        }
+
+        .status-inactive {
+            background-color: #FEE2E2;
+            color: #991B1B;
         }
 
         .sidebar {
@@ -633,27 +620,6 @@ try {
             color: #64748b;
         }
 
-        .input-with-unite {
-            position: relative;
-        }
-        
-        .input-with-unite input {
-            padding-right: 60px;
-        }
-        
-        .unite-label {
-            position: absolute;
-            right: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: #f3f4f6;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-size: 12px;
-            color: #6b7280;
-            pointer-events: none;
-        }
-
         @media (max-width: 768px) {
             .modal-content {
                 width: 95%;
@@ -854,12 +820,12 @@ try {
                     <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-cyan-500 animate-fade-in" style="animation-delay: 0.3s">
                         <div class="flex items-center justify-between mb-4">
                             <div class="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center">
-                                <i class="fas fa-dollar-sign text-cyan-600 text-xl"></i>
+                                <i class="fas fa-weight-hanging text-cyan-600 text-xl"></i>
                             </div>
-                            <span class="text-sm font-medium text-cyan-600">Valeur totale</span>
+                            <span class="text-sm font-medium text-cyan-600">Quantité totale</span>
                         </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($valeur_totale_transferee, 2) ?> $</h3>
-                        <p class="text-gray-600">Valeur transférée</p>
+                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($quantite_totale_transferee, 3) ?></h3>
+                        <p class="text-gray-600">Unités transférées</p>
                     </div>
                 </div>
 
@@ -910,7 +876,6 @@ try {
                                         $uniteClass = $transfert['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces';
                                         $uniteText = $transfert['umProduit'] == 'metres' ? 'mètres' : 'pièces';
                                         $uniteIcon = $transfert['umProduit'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube';
-                                        $valeur_transfert = $transfert['quantite_transferee'] * $transfert['prix_unitaire'];
                                         ?>
                                         <tr class="transfert-row hover:bg-gray-50 transition-colors fade-in-row"
                                             data-transfert-id="<?= htmlspecialchars($transfert['id']) ?>"
@@ -957,7 +922,7 @@ try {
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                 <div class="flex items-center">
-                                                    <span class="font-bold"><?= number_format($transfert['quantite_transferee'], 3) ?></span>
+                                                    <span class="font-bold"><?= number_format($transfert['quantite_source'], 3) ?></span>
                                                     <span class="text-xs text-gray-500 ml-1">
                                                         <?= $uniteText ?>
                                                     </span>
@@ -966,7 +931,7 @@ try {
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                 <div class="flex items-center">
                                                     <span class="bg-green-100 text-green-800 px-2 py-1 rounded-lg text-sm font-medium">
-                                                        <?= number_format($valeur_transfert, 2) ?> $
+                                                        <?= number_format($transfert['quantite_source'] * $transfert['prix_unitaire'], 2) ?> $
                                                     </span>
                                                 </div>
                                             </td>
@@ -1057,45 +1022,41 @@ try {
             
             <form id="transfertForm" method="POST" action="transferts.php">
                 <div class="space-y-4">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label for="boutique_expedition" class="block text-sm font-medium text-gray-700 mb-1">Boutique expédition *</label>
-                            <select name="boutique_expedition" id="boutique_expedition" required
-                                    class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3">
-                                <option value="">Sélectionnez la boutique qui envoie</option>
-                                <?php foreach ($boutiques as $boutique): ?>
-                                    <option value="<?= $boutique['id'] ?>"><?= htmlspecialchars($boutique['nom']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label for="boutique_destination" class="block text-sm font-medium text-gray-700 mb-1">Boutique destination *</label>
-                            <select name="boutique_destination" id="boutique_destination" required
-                                    class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3">
-                                <option value="">Sélectionnez la boutique qui reçoit</option>
-                                <?php foreach ($boutiques as $boutique): ?>
-                                    <option value="<?= $boutique['id'] ?>"><?= htmlspecialchars($boutique['nom']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
+                    <div>
+                        <label for="stock_id" class="block text-sm font-medium text-gray-700 mb-1">Stock source *</label>
+                        <select name="stock_id" id="stock_id" required
+                                class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
+                                onchange="updateStockInfo()">
+                            <option value="">Sélectionnez un stock à transférer</option>
+                            <?php foreach ($stocks as $stock): 
+                                $uniteText = $stock['umProduit'] == 'metres' ? 'mètres' : 'pièces';
+                                $quantiteDisponible = number_format($stock['quantite'], 3);
+                            ?>
+                                <option value="<?= $stock['id'] ?>" 
+                                        data-quantite="<?= $stock['quantite'] ?>"
+                                        data-produit="<?= htmlspecialchars($stock['designation']) ?>"
+                                        data-boutique="<?= htmlspecialchars($stock['boutique_nom']) ?>"
+                                        data-unite="<?= $stock['umProduit'] ?>">
+                                    <?= htmlspecialchars($stock['boutique_nom']) ?> - 
+                                    <?= htmlspecialchars($stock['designation']) ?> 
+                                    (<?= $quantiteDisponible ?> <?= $uniteText ?> disponibles)
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div id="stockInfo" class="info-box hidden mt-2">
+                            <p><strong>Quantité disponible :</strong> <span id="quantiteDisponible">0</span> <span id="uniteDisponible">unités</span></p>
+                            <p><strong>Boutique source :</strong> <span id="boutiqueSource">-</span></p>
+                            <p><strong>Produit :</strong> <span id="produitInfo">-</span></p>
                         </div>
                     </div>
                     
                     <div>
-                        <label for="produit_matricule" class="block text-sm font-medium text-gray-700 mb-1">Produit à transférer *</label>
-                        <select name="produit_matricule" id="produit_matricule" required
+                        <label for="boutique_destination" class="block text-sm font-medium text-gray-700 mb-1">Boutique destination *</label>
+                        <select name="boutique_destination" id="boutique_destination" required
                                 class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3">
-                            <option value="">Sélectionnez un produit</option>
-                            <?php foreach ($produits as $produit): 
-                                $uniteText = $produit['umProduit'] == 'metres' ? 'mètres' : 'pièces';
-                            ?>
-                                <option value="<?= htmlspecialchars($produit['matricule']) ?>" 
-                                        data-unite="<?= htmlspecialchars($produit['umProduit']) ?>"
-                                        data-quantite-totale="<?= $produit['quantite_totale'] ?? 0 ?>">
-                                    <?= htmlspecialchars($produit['designation']) ?> 
-                                    (<?= htmlspecialchars($produit['matricule']) ?> - 
-                                    <?= number_format($produit['quantite_totale'] ?? 0, 3) ?> <?= $uniteText ?> disponibles)
-                                </option>
+                            <option value="">Sélectionnez une boutique destination</option>
+                            <?php foreach ($boutiques as $boutique): ?>
+                                <option value="<?= $boutique['id'] ?>"><?= htmlspecialchars($boutique['nom']) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -1108,6 +1069,7 @@ try {
                                    placeholder="Ex: 5.000">
                             <span id="quantiteUniteLabel" class="unite-label">unités</span>
                         </div>
+                        <p class="text-xs text-gray-500 mt-1" id="quantiteMaxInfo"></p>
                     </div>
                     
                     <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -1116,8 +1078,8 @@ try {
                             <div>
                                 <p class="text-sm text-blue-700 font-medium">Processus de transfert</p>
                                 <ul class="text-xs text-blue-600 mt-1 list-disc pl-4 space-y-1">
-                                    <li>La quantité sera déduite du stock de la boutique expédition</li>
-                                    <li>La quantité sera ajoutée au stock de la boutique destination</li>
+                                    <li>La quantité sera déduite du stock source</li>
+                                    <li>La quantité sera ajoutée au stock destination</li>
                                     <li>Un nouveau stock sera créé si le produit n'existe pas dans la boutique destination</li>
                                     <li>Le mouvement sera enregistré comme "transfert" dans l'historique</li>
                                     <li>Le prix unitaire est conservé lors du transfert</li>
@@ -1201,188 +1163,171 @@ try {
 
         // --- GESTION DE LA MODALE DE TRANSFERT ---
         const transfertModal = document.getElementById('transfertModal');
-        const produitSelect = document.getElementById('produit_matricule');
-        const boutiqueExpeditionSelect = document.getElementById('boutique_expedition');
-        const boutiqueDestinationSelect = document.getElementById('boutique_destination');
+        const stockSelect = document.getElementById('stock_id');
+        const stockInfo = document.getElementById('stockInfo');
+        const quantiteDisponible = document.getElementById('quantiteDisponible');
+        const uniteDisponible = document.getElementById('uniteDisponible');
+        const boutiqueSource = document.getElementById('boutiqueSource');
+        const produitInfo = document.getElementById('produitInfo');
+        const quantiteMaxInfo = document.getElementById('quantiteMaxInfo');
         const quantiteTransfereeInput = document.getElementById('quantite_transferee');
         const quantiteUniteLabel = document.getElementById('quantiteUniteLabel');
 
-        // Fonction pour mettre à jour l'unité de mesure
-        function updateUnite() {
-            const selectedOption = produitSelect.options[produitSelect.selectedIndex];
+        function updateStockInfo() {
+            const selectedOption = stockSelect.options[stockSelect.selectedIndex];
+            
             if (selectedOption && selectedOption.value) {
+                const quantite = parseFloat(selectedOption.getAttribute('data-quantite'));
+                const produit = selectedOption.getAttribute('data-produit');
+                const boutique = selectedOption.getAttribute('data-boutique');
                 const unite = selectedOption.getAttribute('data-unite');
                 const uniteText = unite === 'metres' ? 'mètres' : 'pièces';
+                
+                // Mettre à jour les informations
+                quantiteDisponible.textContent = quantite.toFixed(3);
+                uniteDisponible.textContent = uniteText;
+                boutiqueSource.textContent = boutique;
+                produitInfo.textContent = produit;
+                
+                // Mettre à jour le label d'unité
                 quantiteUniteLabel.textContent = uniteText;
+                
+                // Mettre à jour l'information de quantité max
+                quantiteMaxInfo.textContent = `Quantité maximale transférable : ${quantite.toFixed(3)} ${uniteText}`;
+                
+                // Afficher les informations
+                stockInfo.classList.remove('hidden');
+                
+                // Mettre à jour la valeur max de l'input
+                quantiteTransfereeInput.max = quantite;
+                quantiteTransfereeInput.value = '';
+                
+                // Désactiver la boutique source dans la liste des destinations
+                const destinationSelect = document.getElementById('boutique_destination');
+                const boutiqueSourceId = selectedOption.value.split('-')[0]; // Adapter selon votre structure
+                
+                Array.from(destinationSelect.options).forEach(option => {
+                    // Logique à adapter selon comment vous récupérez l'ID de la boutique source
+                    // option.disabled = option.value === boutiqueSourceId;
+                });
+                
             } else {
-                quantiteUniteLabel.textContent = 'unités';
+                stockInfo.classList.add('hidden');
+                quantiteMaxInfo.textContent = '';
             }
         }
 
-        // Fonction pour vérifier que la destination est différente de l'expédition
-        function verifierDestination() {
-            const expeditionId = boutiqueExpeditionSelect.value;
-            const destinationId = boutiqueDestinationSelect.value;
-            
-            if (expeditionId && destinationId && expeditionId === destinationId) {
-                alert('La boutique destination doit être différente de la boutique expédition');
-                boutiqueDestinationSelect.value = '';
-                return false;
-            }
-            return true;
-        }
-
-        // Fonction pour ouvrir le modal
         function openTransfertModal() {
-            console.log('Opening transfert modal...');
-            // Réinitialiser le formulaire
-            document.getElementById('transfertForm').reset();
-            quantiteUniteLabel.textContent = 'unités';
-            
-            // Afficher le modal
+            transfertForm.reset();
+            stockInfo.classList.add('hidden');
+            quantiteMaxInfo.textContent = '';
             transfertModal.classList.add('show');
-            console.log('Modal should be visible now');
         }
 
-        // Fonction pour fermer le modal
         function closeTransfertModal() {
             transfertModal.classList.remove('show');
         }
 
-        // Fonction pour ouvrir le modal de suppression
+        // Écouter les changements sur le select de stock
+        stockSelect.addEventListener('change', updateStockInfo);
+
+        // --- GESTION DE LA MODALE DELETE TRANSFERT ---
+        const deleteTransfertModal = document.getElementById('deleteTransfertModal');
+        const deleteTransfertModalText = document.getElementById('deleteTransfertModalText');
+        const deleteTransfertId = document.getElementById('deleteTransfertId');
+
         function openDeleteTransfertModal(transfertId, produitDesignation) {
-            const deleteModal = document.getElementById('deleteTransfertModal');
-            const deleteTransfertModalText = document.getElementById('deleteTransfertModalText');
-            const deleteTransfertId = document.getElementById('deleteTransfertId');
-            
-            if (deleteTransfertModalText && deleteTransfertId) {
-                deleteTransfertModalText.innerHTML = `Vous êtes sur le point de supprimer définitivement le transfert #${transfertId} (Produit: <strong>${produitDesignation}</strong>). Cette action est irréversible et peut affecter l'équilibre des stocks. Confirmez-vous ?`;
-                deleteTransfertId.value = transfertId;
-                deleteModal.classList.add('show');
-            }
+            deleteTransfertModalText.innerHTML = `Vous êtes sur le point de supprimer définitivement le transfert #${transfertId} (Produit: <strong>${produitDesignation}</strong>). Cette action est irréversible et peut affecter l'équilibre des stocks. Confirmez-vous ?`;
+            deleteTransfertId.value = transfertId;
+            deleteTransfertModal.classList.add('show');
         }
 
-        // Fonction pour fermer le modal de suppression
         function closeDeleteTransfertModal() {
-            const deleteModal = document.getElementById('deleteTransfertModal');
-            if (deleteModal) {
-                deleteModal.classList.remove('show');
-            }
+            deleteTransfertModal.classList.remove('show');
         }
-
-        // Écouter les changements sur les selects
-        produitSelect.addEventListener('change', updateUnite);
-        boutiqueDestinationSelect.addEventListener('change', verifierDestination);
 
         // --- GESTION DE LA RECHERCHE ---
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) {
-            searchInput.addEventListener('keyup', function() {
-                const searchTerm = this.value.toLowerCase();
-                const rows = document.querySelectorAll('.transfert-row');
-                let found = false;
+        document.getElementById('searchInput').addEventListener('keyup', function() {
+            const searchTerm = this.value.toLowerCase();
+            const rows = document.querySelectorAll('.transfert-row');
+            let found = false;
 
-                rows.forEach(row => {
-                    const transfertId = row.dataset.transfertId;
-                    const expedition = row.dataset.expedition;
-                    const destination = row.dataset.destination;
-                    const produit = row.dataset.produit;
+            rows.forEach(row => {
+                const transfertId = row.dataset.transfertId;
+                const expedition = row.dataset.expedition;
+                const destination = row.dataset.destination;
+                const produit = row.dataset.produit;
 
-                    if (transfertId.includes(searchTerm) || 
-                        expedition.includes(searchTerm) || 
-                        destination.includes(searchTerm) || 
-                        produit.includes(searchTerm)) {
-                        row.style.display = '';
-                        found = true;
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-
-                const noResults = document.getElementById('noResults');
-                const tableBody = document.getElementById('tableBody');
-                
-                if (noResults) noResults.classList.toggle('hidden', found);
-                if (tableBody) tableBody.classList.toggle('hidden', !found && searchTerm !== '');
+                if (transfertId.includes(searchTerm) || 
+                    expedition.includes(searchTerm) || 
+                    destination.includes(searchTerm) || 
+                    produit.includes(searchTerm)) {
+                    row.style.display = '';
+                    found = true;
+                } else {
+                    row.style.display = 'none';
+                }
             });
-        }
+
+            document.getElementById('noResults').classList.toggle('hidden', found);
+            document.getElementById('tableBody').classList.toggle('hidden', !found && searchTerm !== '');
+        });
 
         // --- FONCTION DE RAFRAÎCHISSEMENT ---
         function refreshPage() {
             const button = event.target.closest('button');
-            if (button) {
-                button.classList.add('animate-spin');
-                setTimeout(() => {
-                    button.classList.remove('animate-spin');
-                    window.location.reload();
-                }, 500);
-            }
+            button.classList.add('animate-spin');
+            setTimeout(() => {
+                button.classList.remove('animate-spin');
+                window.location.reload();
+            }, 500);
         }
 
         // --- VALIDATION DU FORMULAIRE DE TRANSFERT ---
         const transfertForm = document.getElementById('transfertForm');
         
-        if (transfertForm) {
-            transfertForm.addEventListener('submit', function(e) {
-                const boutiqueExpedition = boutiqueExpeditionSelect.value;
-                const boutiqueDestination = boutiqueDestinationSelect.value;
-                const produitMatricule = produitSelect.value;
-                const quantiteTransferee = parseFloat(quantiteTransfereeInput.value);
-                
-                // Validation basique
-                if (!boutiqueExpedition) {
-                    e.preventDefault();
-                    alert('Veuillez sélectionner une boutique expédition.');
-                    return false;
-                }
-                
-                if (!boutiqueDestination) {
-                    e.preventDefault();
-                    alert('Veuillez sélectionner une boutique destination.');
-                    return false;
-                }
-                
-                if (boutiqueExpedition === boutiqueDestination) {
-                    e.preventDefault();
-                    alert('La boutique destination doit être différente de la boutique expédition.');
-                    return false;
-                }
-                
-                if (!produitMatricule) {
-                    e.preventDefault();
-                    alert('Veuillez sélectionner un produit à transférer.');
-                    return false;
-                }
-                
-                if (!quantiteTransferee || quantiteTransferee <= 0) {
-                    e.preventDefault();
-                    alert('La quantité transférée doit être supérieure à 0.');
-                    return false;
-                }
-                
-                // Confirmation supplémentaire pour les grandes quantités
-                if (quantiteTransferee > 100) {
-                    const confirmation = confirm(`Vous êtes sur le point de transférer ${quantiteTransferee} unités. Confirmez-vous cette opération ?`);
-                    if (!confirmation) {
-                        e.preventDefault();
-                        return false;
-                    }
-                }
-                
-                return true;
-            });
-        }
+        transfertForm.addEventListener('submit', function(e) {
+            const stockId = document.getElementById('stock_id').value;
+            const quantiteTransferee = parseFloat(document.getElementById('quantite_transferee').value);
+            const boutiqueDestination = document.getElementById('boutique_destination').value;
+            
+            // Validation basique
+            if (!stockId) {
+                e.preventDefault();
+                alert('Veuillez sélectionner un stock source.');
+                return false;
+            }
+            
+            if (!boutiqueDestination) {
+                e.preventDefault();
+                alert('Veuillez sélectionner une boutique destination.');
+                return false;
+            }
+            
+            if (quantiteTransferee <= 0) {
+                e.preventDefault();
+                alert('La quantité transférée doit être supérieure à 0.');
+                return false;
+            }
+            
+            // Validation de la quantité disponible
+            const selectedOption = stockSelect.options[stockSelect.selectedIndex];
+            const quantiteDisponible = selectedOption ? parseFloat(selectedOption.getAttribute('data-quantite')) : 0;
+            
+            if (quantiteTransferee > quantiteDisponible) {
+                e.preventDefault();
+                alert(`Quantité insuffisante. Quantité disponible : ${quantiteDisponible.toFixed(3)}`);
+                return false;
+            }
+            
+            return true;
+        });
 
         // --- NAVIGATION CLAVIER ---
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 if (transfertModal.classList.contains('show')) closeTransfertModal();
-                
-                const deleteModal = document.getElementById('deleteTransfertModal');
-                if (deleteModal && deleteModal.classList.contains('show')) {
-                    closeDeleteTransfertModal();
-                }
-                
+                if (deleteTransfertModal.classList.contains('show')) closeDeleteTransfertModal();
                 if (!sidebar.classList.contains('-translate-x-full')) toggleSidebar();
             }
         });
@@ -1405,10 +1350,6 @@ try {
                 this.style.transform = 'translateY(0)';
             });
         });
-
-        // Initialisation
-        console.log('Transferts page loaded successfully');
-        console.log('openTransfertModal function available:', typeof openTransfertModal === 'function');
     </script>
 </body>
 </html>

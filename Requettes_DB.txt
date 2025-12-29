@@ -1,4 +1,8 @@
 
+# Gestion de stock et de vente des rideaux pour NGS: New Grace Service
+## Stucture de la Db
+
+-- Table pour les Boutiques
 CREATE TABLE boutiques (
     id INT PRIMARY KEY AUTO_INCREMENT,
     nom VARCHAR(100) NOT NULL,
@@ -10,7 +14,7 @@ CREATE TABLE boutiques (
 );
 
 
-
+-- Table pour les utilisateurs
 CREATE TABLE utilisateurs (
     id INT PRIMARY KEY AUTO_INCREMENT,
     nom_utilisateur VARCHAR(50) UNIQUE NOT NULL,
@@ -21,3 +25,76 @@ CREATE TABLE utilisateurs (
     actif BOOLEAN DEFAULT TRUE,
     date_creation DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Table pour les produits
+CREATE TABLE produits (
+    matricule VARCHAR(255) PRIMARY KEY ,
+    designation VARCHAR(255) NOT NULL,
+    description TEXT,
+    statut int,-- il est 0 par defaut, Le statut change à 1 quand on supprime un produits
+    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+    actif BOOLEAN DEFAULT TRUE
+);
+
+
+-- Table pour les Stocks
+CREATE TABLE stock (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+	type_mouvement ENUM('approvisionnement','transfert') DEFAULT 'approvisionnement',
+   -- il est toujours à approvisionnement, le transfert proviendra des transferes
+    boutique_id INT NOT NULL,
+    produit_matricule VARCHAR(20) NOT NULL,  -- IMPORTANT : doit correspondre à produits.matricule
+    quantite DECIMAL(10,3) DEFAULT 0,
+    prix DECIMAL(10,3),
+    seuil_alerte_stock INT DEFAULT 5,
+    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime un stock
+);
+
+
+-- Table pour les détails des commandes (produits vendus)
+CREATE TABLE commande_produits (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    commande_id INT NOT NULL,
+    stock_id INT NOT NULL,
+    quantite DECIMAL(10,3) NOT NULL,
+    prix_unitaire DECIMAL(10,2) NOT NULL,
+    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime un produits de la commande
+);
+
+
+-- Table pour les paiements 
+CREATE TABLE paiements (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    date DATE DEFAULT NULL,
+    commandes_id INT NOT NULL,
+    montant DECIMAL(10,3) DEFAULT 0.000,
+    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime un paiement
+);
+
+## Modification Avec la diversification des produits et les transferts.
+
+-- Table pour les produits
+CREATE TABLE produits (
+    matricule VARCHAR(255) PRIMARY KEY ,
+    designation VARCHAR(255) NOT NULL,
+    description TEXT,
+    umProduit ENUM('pieces','metres') DEFAULT 'pieces',
+   -- UM pour Unité de Mesure, ceci permet si le produit se vend par mettres (pour les rideaux) ou par pieces (pour les autres produits)
+    statut int,-- il est 0 par defaut, Le statut change à 1 quand on supprime un produits
+    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+    actif BOOLEAN DEFAULT TRUE
+);
+
+
+-- Table pour les transfert
+CREATE TABLE transferts (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    date DATE DEFAULT NULL,
+    stock_id INT NOT NULL,
+    Expedition INT NOT NULL, -- c'est la boutique qui envois de ces mmarchandises
+    Destination INT NOT NULL, -- c'est la boutique qui recois les marchandises
+    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime un transfert
+);
+
+

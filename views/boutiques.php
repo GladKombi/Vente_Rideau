@@ -449,13 +449,21 @@ try {
                     <i class="fas fa-box w-5 text-gray-300"></i>
                     <span>Produits</span>
                 </a>
+                <a href="stocks.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-warehouse w-5 text-white"></i>
+                    <span>Stocks</span>
+                </a>
+                <a href="transferts.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-exchange-alt w-5 text-gray-300"></i>
+                    <span>Transferts</span>
+                </a>
                 <a href="utilisateurs.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-users w-5 text-gray-300"></i>
                     <span>Utilisateurs</span>
                 </a>
-                <a href="parametres.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-cog w-5 text-gray-300"></i>
-                    <span>Paramètres</span>
+                <a href="rapports.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
+                    <span>Rapports</span>
                 </a>
             </nav>
 
