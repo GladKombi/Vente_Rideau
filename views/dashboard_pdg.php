@@ -283,9 +283,9 @@ try {
                     <i class="fas fa-users w-5"></i>
                     <span>Utilisateurs</span>
                 </a>
-                <a href="parametres.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5">
+                <a href="rapports_pdg.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5">
                     <i class="fas fa-cog w-5"></i>
-                    <span>Paramètres</span>
+                    <span>Rapports</span>
                 </a>
             </nav>
 

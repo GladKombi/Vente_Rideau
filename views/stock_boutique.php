@@ -2,11 +2,6 @@
 # Connexion à la base de données
 include '../connexion/connexion.php';
 
-// Démarrer la session si ce n'est pas déjà fait
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 // Vérification de l'authentification BOUTIQUE
 if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'boutique') {
     header('Location: ../login.php');
@@ -79,7 +74,7 @@ try {
     if ($totalPages < 1) $totalPages = 1;
     if ($page > $totalPages && $totalPages > 0) $page = $totalPages;
 
-    // Requête paginée avec jointures - CORRIGÉE
+    // Requête paginée avec jointures
     $query = $pdo->prepare("
         SELECT s.*, 
                p.designation as produit_designation,
@@ -528,7 +523,6 @@ try {
             color: #166534;
         }
         
-        /* Styles pour les badges d'unité */
         .badge-unite {
             display: inline-flex;
             align-items: center;
@@ -548,12 +542,6 @@ try {
             background-color: #DCFCE7;
             color: #166534;
             border: 1px solid #BBF7D0;
-        }
-        
-        .badge-rideau {
-            background-color: #FEF3C7;
-            color: #92400E;
-            border: 1px solid #FDE68A;
         }
         
         .input-with-unite {
@@ -593,6 +581,30 @@ try {
         .boutique-header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
+        }
+
+        .loading-spinner-small {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        input[type="radio"]:checked + div {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+
+        input[type="radio"]:checked + div .font-medium {
+            color: #1e40af;
         }
 
         @media (max-width: 768px) {
@@ -656,12 +668,12 @@ try {
             </div>
 
             <nav class="sidebar-nav p-4 space-y-1">
-                <a href="dashboard_boutique.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
-                    <i class="fas fa-chart-line w-5 text-white"></i>
+                <a href="dashboard_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-chart-line w-5 text-gray-300"></i>
                     <span>Tableau de bord</span>
                 </a>
-                <a href="stock_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-warehouse w-5 text-gray-300"></i>
+                <a href="stock_boutique.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-warehouse w-5 text-white"></i>
                     <span>Mes stocks</span>
                     <?php if ($total_stocks > 0): ?>
                         <span class="notification-badge"><?= $total_stocks ?></span>
@@ -671,9 +683,17 @@ try {
                     <i class="fas fa-shopping-cart w-5 text-gray-300"></i>
                     <span>Ventes</span>
                 </a>
-                <a href="paiements.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5">
-                    <i class="fas fa-money-bill-wave w-5"></i>
+                <a href="paiements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-money-bill-wave w-5 text-gray-300"></i>
                     <span>Paiements</span>
+                </a>
+                <a href="transferts-boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-truck-loading w-5 text-gray-300"></i>
+                    <span>Transferts</span>
+                </a>
+                <a href="mouvements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-exchange-alt w-5 text-gray-300"></i>
+                    <span>Mouvements Caisse</span>
                 </a>
                 <a href="rapports_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-chart-bar w-5 text-gray-300"></i>
@@ -719,6 +739,11 @@ try {
                     </div>
                     
                     <div class="flex items-center space-x-4">
+                        <button onclick="openEnregistrerStockModal()" 
+                                class="px-4 py-2 gradient-green-btn text-white rounded-lg flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
+                            <i class="fas fa-plus-circle"></i>
+                            <span>Enregistrer un stock</span>
+                        </button>
                         <button onclick="refreshPage()" 
                                 class="px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
                             <i class="fas fa-sync-alt"></i>
@@ -1070,7 +1095,7 @@ try {
                                                 <p class="text-lg">Aucun stock enregistré pour votre boutique</p>
                                                 <p class="text-sm mt-2">
                                                     Votre boutique ne possède actuellement aucun produit en stock.
-                                                    Contactez l'administration pour ajouter des produits à votre stock.
+                                                    Vous pouvez en ajouter en cliquant sur le bouton "Enregistrer un stock".
                                                 </p>
                                             </div>
                                         </td>
@@ -1125,9 +1150,145 @@ try {
                         </div>
                     <?php endif; ?>
                 </div>
-
-                
             </main>
+        </div>
+    </div>
+
+    <!-- Modal pour enregistrer un stock -->
+    <div id="enregistrerStockModal" class="modal">
+        <div class="modal-content slide-down">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h3 class="text-xl font-bold text-gray-900">
+                        <i class="fas fa-box text-blue-500 mr-2"></i>
+                        Enregistrer un nouveau stock
+                    </h3>
+                    <button onclick="closeEnregistrerStockModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times text-lg"></i>
+                    </button>
+                </div>
+
+                <form id="enregistrerStockForm" action="../models/enregistrer_stock.php" method="POST">
+                    <input type="hidden" name="boutique_id" value="<?= $boutique_id ?>">
+                    
+                    <div class="space-y-4">
+                        <!-- Sélection du produit -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-box-open mr-2"></i>
+                                Produit *
+                            </label>
+                            <select name="produit_matricule" id="produitSelect" 
+                                    required
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
+                                <option value="">Sélectionnez un produit</option>
+                                <?php
+                                try {
+                                    $queryProduits = $pdo->prepare("
+                                        SELECT matricule, designation, umProduit, description 
+                                        FROM produits 
+                                        WHERE statut = 0 AND actif = TRUE 
+                                        ORDER BY designation
+                                    ");
+                                    $queryProduits->execute();
+                                    $produits = $queryProduits->fetchAll(PDO::FETCH_ASSOC);
+                                    
+                                    foreach ($produits as $produit) {
+                                        $unite = $produit['umProduit'] == 'metres' ? 'mètres' : 'pièces';
+                                        echo '<option value="' . htmlspecialchars($produit['matricule']) . '" 
+                                                data-unite="' . $produit['umProduit'] . '"
+                                                data-designation="' . htmlspecialchars($produit['designation']) . '">';
+                                        echo htmlspecialchars($produit['designation']) . ' - ' . htmlspecialchars($produit['matricule']) . ' (' . $unite . ')';
+                                        echo '</option>';
+                                    }
+                                } catch (PDOException $e) {
+                                    echo '<option value="">Erreur de chargement des produits</option>';
+                                }
+                                ?>
+                            </select>
+                            <div id="produitInfo" class="info-box mt-2 hidden">
+                                <p id="produitDescription"></p>
+                                <p id="produitUnite" class="mt-1"></p>
+                            </div>
+                        </div>
+
+                        <!-- Information sur le type de mouvement -->
+                        <div class="info-box">
+                            <div class="flex items-start space-x-3">
+                                <i class="fas fa-info-circle text-blue-500 mt-0.5"></i>
+                                <div>
+                                    <p class="font-medium text-gray-900 mb-1">Type de mouvement: Approvisionnement</p>
+                                    <p class="text-xs text-gray-600">
+                                        Tous les enregistrements de stock sont considérés comme des approvisionnements.
+                                        Les transferts entre boutiques sont gérés séparément dans la section "Transferts".
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Quantité et prix -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-weight-hanging mr-2"></i>
+                                    Quantité *
+                                </label>
+                                <div class="input-with-unite">
+                                    <input type="number" name="quantite" step="0.001" min="0.001" required
+                                           placeholder="Ex: 100.000"
+                                           class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <span id="uniteLabel" class="unite-label">pièces</span>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-tag mr-2"></i>
+                                    Prix unitaire ($) *
+                                </label>
+                                <div class="input-with-unite">
+                                    <input type="number" name="prix" step="0.01" min="0.01" required
+                                           placeholder="Ex: 25.50"
+                                           class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <span id="prixUniteLabel" class="unite-label">$/unité</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Seuil d'alerte -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-bell mr-2"></i>
+                                Seuil d'alerte stock *
+                            </label>
+                            <div class="flex items-center space-x-3">
+                                <input type="number" name="seuil_alerte_stock" value="5" min="1" required
+                                       class="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <span id="seuilUniteLabel" class="text-sm text-gray-600">unités</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2">
+                                <i class="fas fa-info-circle text-blue-500 mr-1"></i>
+                                Le système vous alertera quand le stock atteindra cette quantité
+                            </p>
+                        </div>
+
+                        <!-- Bouton d'enregistrement -->
+                        <div class="pt-4 border-t border-gray-200">
+                            <div class="flex justify-end space-x-3">
+                                <button type="button" onclick="closeEnregistrerStockModal()"
+                                        class="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-medium">
+                                    Annuler
+                                </button>
+                                <button type="submit" id="submitBtn"
+                                        class="px-6 py-3 gradient-blue-btn rounded-xl font-medium flex items-center space-x-2">
+                                    <i class="fas fa-save"></i>
+                                    <span>Enregistrer le stock</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -1226,23 +1387,170 @@ try {
             showNotification('Vous êtes hors ligne', 'warning');
         });
 
+        // --- GESTION DU MODAL D'ENREGISTREMENT DE STOCK ---
+        function openEnregistrerStockModal() {
+            document.getElementById('enregistrerStockModal').classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeEnregistrerStockModal() {
+            document.getElementById('enregistrerStockModal').classList.remove('show');
+            document.body.style.overflow = 'auto';
+            resetEnregistrerStockForm();
+        }
+
+        function resetEnregistrerStockForm() {
+            document.getElementById('enregistrerStockForm').reset();
+            document.getElementById('produitInfo').classList.add('hidden');
+            document.getElementById('uniteLabel').textContent = 'pièces';
+            document.getElementById('prixUniteLabel').textContent = '$/unité';
+            document.getElementById('seuilUniteLabel').textContent = 'unités';
+        }
+
+        // --- GESTION DE LA SÉLECTION DE PRODUIT ---
+        document.getElementById('produitSelect').addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            const produitInfo = document.getElementById('produitInfo');
+            const uniteLabel = document.getElementById('uniteLabel');
+            const prixUniteLabel = document.getElementById('prixUniteLabel');
+            const seuilUniteLabel = document.getElementById('seuilUniteLabel');
+            const produitDescription = document.getElementById('produitDescription');
+            const produitUnite = document.getElementById('produitUnite');
+            
+            if (selectedOption.value) {
+                const unite = selectedOption.getAttribute('data-unite');
+                const designation = selectedOption.getAttribute('data-designation');
+                const texteUnite = unite === 'metres' ? 'mètres' : 'pièces';
+                
+                // Mettre à jour les labels d'unité
+                uniteLabel.textContent = texteUnite;
+                prixUniteLabel.textContent = `$/${texteUnite}`;
+                seuilUniteLabel.textContent = texteUnite;
+                
+                // Afficher les informations du produit
+                produitDescription.textContent = `Produit sélectionné: ${designation}`;
+                produitUnite.textContent = `Unité de mesure: ${texteUnite}`;
+                produitInfo.classList.remove('hidden');
+            } else {
+                produitInfo.classList.add('hidden');
+                uniteLabel.textContent = 'pièces';
+                prixUniteLabel.textContent = '$/unité';
+                seuilUniteLabel.textContent = 'unités';
+            }
+        });
+
+        // --- GESTION DU FORMULAIRE D'ENREGISTREMENT (AJAX) ---
+        document.getElementById('enregistrerStockForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const originalText = submitBtn.innerHTML;
+            
+            // Désactiver le bouton et afficher un spinner
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `
+                <div class="loading-spinner-small"></div>
+                <span>Enregistrement en cours...</span>
+            `;
+            
+            // Récupérer les données du formulaire
+            const formData = new FormData(this);
+            
+            // Envoyer la requête AJAX
+            fetch(this.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Erreur HTTP: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Réponse reçue:', data);
+                
+                if (data.success) {
+                    // Afficher un message de succès
+                    showNotification(data.message || 'Stock enregistré avec succès !', 'success');
+                    
+                    // Fermer le modal
+                    closeEnregistrerStockModal();
+                    
+                    // Rediriger après un délai
+                    setTimeout(() => {
+                        window.location.href = data.redirect || 'stock_boutique.php';
+                    }, 2000);
+                } else {
+                    // Afficher un message d'erreur détaillé
+                    showNotification(data.message || 'Erreur lors de l\'enregistrement', 'error');
+                    
+                    // Réactiver le bouton
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
+                }
+            })
+            .catch(error => {
+                console.error('Erreur détaillée:', error);
+                
+                // Afficher un message d'erreur plus informatif
+                let errorMessage = 'Erreur réseau ou serveur';
+                if (error.message.includes('HTTP')) {
+                    errorMessage = `Erreur de connexion au serveur (${error.message})`;
+                }
+                
+                showNotification(`${errorMessage}. Veuillez réessayer.`, 'error');
+                
+                // Réactiver le bouton
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            });
+        });
+
+        // Fonction pour afficher des notifications temporaires
         function showNotification(message, type) {
             const notification = document.createElement('div');
-            notification.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg text-white z-50 animate-fade-in ${
-                type === 'success' ? 'bg-green-500' : 'bg-yellow-500'
+            notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg text-white z-50 animate-fade-in ${
+                type === 'success' ? 'bg-green-500' : 
+                type === 'error' ? 'bg-red-500' : 
+                type === 'warning' ? 'bg-yellow-500' : 
+                'bg-blue-500'
             }`;
             notification.innerHTML = `
-                <div class="flex items-center space-x-2">
-                    <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
                     <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
             `;
             document.body.appendChild(notification);
             
             setTimeout(() => {
-                notification.remove();
-            }, 3000);
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
         }
+
+        // Fermer le modal avec la touche Échap
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeEnregistrerStockModal();
+                if (!sidebar.classList.contains('-translate-x-full')) toggleSidebar();
+            }
+        });
+
+        // Fermer le modal en cliquant en dehors
+        document.getElementById('enregistrerStockModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeEnregistrerStockModal();
+            }
+        });
 
         // --- NAVIGATION CLAVIER ---
         document.addEventListener('keydown', function(e) {

@@ -332,10 +332,14 @@ try {
                     <i class="fas fa-shopping-cart w-5"></i>
                     <span>Ventes</span>
                 </a>
-                <a href="paiements.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5">
-                    <i class="fas fa-money-bill-wave w-5"></i>
-                    <span>Paiements</span>
+                <a href="paiements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-users w-5 text-gray-300"></i>
+                    <span>paiements</span>
                 </a>
+                <a href="mouvements.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-exchange-alt w-5 text-white"></i>
+                    <span>Mouvements Caisse</span>
+                </a>              
                 <a href="stock_boutique.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5">
                     <i class="fas fa-box w-5"></i>
                     <span>Stock</span>
@@ -344,6 +348,10 @@ try {
                         <?= $stats['alertes_stock'] ?>
                     </span>
                     <?php endif; ?>
+                </a>
+                 <a href="rapports_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
+                    <span>Rapports</span>
                 </a>
             </nav>
 

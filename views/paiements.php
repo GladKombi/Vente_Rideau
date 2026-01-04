@@ -782,13 +782,21 @@ try {
                     <i class="fas fa-money-bill-wave w-5 text-white"></i>
                     <span class="font-medium">Paiements</span>
                 </a>
-                <a href="clients.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                <a href="mouvements.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-exchange-alt w-5 text-white"></i>
+                    <span>Mouvements Caisse</span>
+                </a>
+                <!-- <a href="clients.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-users w-5 text-gray-300"></i>
                     <span>Clients</span>
-                </a>
+                </a> -->
                 <a href="stock_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-box w-5 text-gray-300"></i>
                     <span>Stock boutique</span>
+                </a>
+                <a href="transferts-boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-truck-loading w-5 text-gray-300"></i>
+                    <span>Transferts</span>
                 </a>
                 <a href="rapports_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-chart-bar w-5 text-gray-300"></i>

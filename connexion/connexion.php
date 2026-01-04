@@ -6,10 +6,10 @@ $username = "root";
 $password = "";
 $dbname = "vente_rideau";
 # Paramètres de connexion en ligne
-// $servername = "";
-// $username = "";
-// $password = "";
-// $dbname = "";
+// $servername = "185.98.131.161";
+// $username = "newgr2723957";
+// $password = "t2xp2yxvhv";
+// $dbname = "newgr2723957";
 # Demarer la session
 session_start();
 $error_message = "";

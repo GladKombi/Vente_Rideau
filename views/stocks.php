@@ -663,9 +663,9 @@ try {
                     <i class="fas fa-users w-5 text-gray-300"></i>
                     <span>Utilisateurs</span>
                 </a>
-                <a href="rapports.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
-                    <span>Rapports</span>
+                <a href="rapports_pdg.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-chart-bar w-5 text-white"></i>
+                    <span>Rapports PDG</span>
                 </a>
                 
             </nav>

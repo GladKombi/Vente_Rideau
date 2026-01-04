@@ -3,7 +3,7 @@
 include '../connexion/connexion.php';
 
 // Vérification de l'authentification PDG
-if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'pdg') {
+if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'boutique') {
     header('Location: ../login.php');
     exit;
 }
@@ -672,51 +672,39 @@ try {
                     </div>
                     <div>
                         <h1 class="font-display text-xl font-bold">NGS</h1>
-                        <p class="text-xs text-gray-300">New Grace Service - Dashboard PDG</p>
+                        <p class="text-xs text-gray-300">New Grace Service - Dashboard Boutique</p>
                     </div>
                 </div>
             </div>
 
-            <div class="sidebar-profile p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 rounded-full bg-yellow-500/20 border-2 border-yellow-500/30 flex items-center justify-center relative">
-                        <i class="fas fa-crown text-yellow-500 text-lg"></i>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-semibold truncate"><?= htmlspecialchars($_SESSION['user_name'] ?? 'PDG') ?></h3>
-                        <p class="text-sm text-gray-300 truncate"><?= htmlspecialchars($_SESSION['user_email'] ?? '') ?></p>
-                    </div>
-                </div>
-            </div>
 
             <nav class="sidebar-nav p-4 space-y-1">
                 <a href="dashboard_pdg.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors relative">
                     <i class="fas fa-chart-line w-5 text-gray-300"></i>
                     <span>Tableau de bord</span>
                 </a>
-                <a href="boutiques.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-store w-5 text-gray-300"></i>
-                    <span>Boutiques</span>
-                </a>                
-                <a href="produits.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                <a href="ventes_boutique.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-shopping-cart w-5 text-white"></i>
+                    <span>Ventes</span>
+                </a>
+                <a href="paiements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-users w-5 text-gray-300"></i>
+                    <span>paiements</span>
+                </a>
+                <a href="stock_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-box w-5 text-gray-300"></i>
-                    <span>Produits</span>
+                    <span>Mes Stocks</span>
                 </a>
-                <a href="stocks.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-warehouse w-5 text-gray-300"></i>
-                    <span>Stocks</span>
-                </a>
-                <a href="transferts.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10">
-                    <i class="fas fa-exchange-alt w-5 text-white"></i>
+                <a href="transferts-boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-truck-loading w-5 text-gray-300"></i>
                     <span>Transferts</span>
                     <span class="notification-badge"><?= $total_transferts ?></span>
                 </a>
-                <a href="utilisateurs.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-users w-5 text-gray-300"></i>
-                    <span>Utilisateurs</span>
+                <a href="mouvements.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-exchange-alt w-5 text-white"></i>
+                    <span>Mouvements Caisse</span>
                 </a>
-                <a href="rapports.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                <a href="rapports_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-chart-bar w-5 text-gray-300"></i>
                     <span>Rapports</span>
                 </a>
@@ -745,7 +733,7 @@ try {
                             <span class="hidden md:inline">Nouveau transfert</span>
                             <span class="md:hidden">Transfert</span>
                         </button>
-                        <a href="stocks.php"
+                        <a href="stock_boutique.php"
                             class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
                             <i class="fas fa-warehouse"></i>
                             <span class="hidden md:inline">Voir stocks</span>

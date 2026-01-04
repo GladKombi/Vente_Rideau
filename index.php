@@ -226,7 +226,7 @@
                     </div>
                     <div>
                         <h1 class="font-display text-xl font-bold text-gray-900 dark:text-white">NGS</h1>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">New Grace Service | depuis 1995</p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">New Grace Service | RDC</p>
                     </div>
                 </div>
                 
@@ -287,7 +287,7 @@
                         L'art du rideau sur mesure
                     </h1>
                     <p class="text-xl text-gray-300 mb-10 max-w-2xl">
-                        Transformez vos intérieurs avec nos créations d'exception. Design minimaliste, matériaux nobles et savoir-faire français.
+                        Transformez vos intérieurs avec nos créations d'exception. Faites de votre maison un paradis sur terre.
                     </p>
                     <div class="flex flex-col sm:flex-row gap-4">
                         <a href="#produits" class="px-8 py-4 gradient-accent text-white rounded-full font-medium hover:opacity-90 transition inline-flex items-center justify-center">
@@ -578,8 +578,8 @@
                 <div class="lg:w-1/2 lg:pl-16">
                     <div class="grid grid-cols-2 gap-6">
                         <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
-                            <div class="text-3xl font-bold gradient-text mb-2">5</div>
-                            <div class="font-medium dark:text-gray-300">Boutiques en France</div>
+                            <div class="text-3xl font-bold gradient-text mb-2">3</div>
+                            <div class="font-medium dark:text-gray-300">Boutiques en RDC</div>
                         </div>
                         <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
                             <div class="text-3xl font-bold gradient-text mb-2">28</div>
@@ -601,19 +601,19 @@
                     <div class="p-8">
                         <div class="flex justify-between items-start mb-4">
                             <div>
-                                <h3 class="font-bold text-2xl mb-2 dark:text-white">Paris | Le Marais</h3>
-                                <p class="text-gray-500 dark:text-gray-400">Flagship store NGS</p>
+                                <h3 class="font-bold text-2xl mb-2 dark:text-white">Butembo | Rawbank</h3>
+                                <p class="text-gray-500 dark:text-gray-400">show room</p>
                             </div>
                             <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium">Nouveau</span>
                         </div>
                         <p class="text-gray-600 dark:text-gray-300 mb-6">Notre boutique principale avec salle d'exposition et atelier visible.</p>
                         <div class="flex items-center text-gray-500 dark:text-gray-400 mb-2">
                             <i class="fas fa-map-marker-alt mr-3"></i>
-                            <span>12 Rue de la Couture, 75003 Paris</span>
+                            <span>Butembo rue president de la republique, pres de la Rawbank</span>
                         </div>
                         <div class="flex items-center text-gray-500 dark:text-gray-400">
                             <i class="fas fa-clock mr-3"></i>
-                            <span>Du mardi au samedi, 10h-19h</span>
+                            <span>Du lundi au samedi, 08h-17h 30</span>
                         </div>
                     </div>
                 </div>
@@ -626,8 +626,8 @@
                             <i class="fas fa-store text-white text-xl"></i>
                         </div>
                         <div>
-                            <h4 class="font-bold text-lg mb-1 dark:text-white">Lyon | Presqu'île</h4>
-                            <p class="text-gray-600 dark:text-gray-400 text-sm">45 Avenue des Tisserands, 69002 Lyon</p>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Butembo | Rue president de la republique</h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">Rue president de la republique, Batiment Kibweli </p>
                         </div>
                     </div>
                     
@@ -637,8 +637,8 @@
                             <i class="fas fa-store text-white text-xl"></i>
                         </div>
                         <div>
-                            <h4 class="font-bold text-lg mb-1 dark:text-white">Bordeaux | Centre</h4>
-                            <p class="text-gray-600 dark:text-gray-400 text-sm">8 Rue des Draperies, 33000 Bordeaux</p>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Beni | Boulevard Nyamwisi Batiment Mbayahi </h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">Quartier residentiel , près de la Rawbank</p>
                         </div>
                     </div>
                     
@@ -648,21 +648,12 @@
                             <i class="fas fa-store text-white text-xl"></i>
                         </div>
                         <div>
-                            <h4 class="font-bold text-lg mb-1 dark:text-white">Lille | Vieux Lille</h4>
-                            <p class="text-gray-600 dark:text-gray-400 text-sm">22 Place du Théâtre, 59000 Lille</p>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Bunia | Rue Ituri</h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">Rue Ituri, Batiment Qualitex pres de l'ancien SOFICOM </p>
                         </div>
                     </div>
                     
-                    <!-- Boutique Toulouse -->
-                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                        <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
-                            <i class="fas fa-store text-white text-xl"></i>
-                        </div>
-                        <div>
-                            <h4 class="font-bold text-lg mb-1 dark:text-white">Toulouse | Capitole</h4>
-                            <p class="text-gray-600 dark:text-gray-400 text-sm">15 Rue des Filatiers, 31000 Toulouse</p>
-                        </div>
-                    </div>
+                    
                 </div>
             </div>
         </div>
@@ -730,7 +721,7 @@
                                 </div>
                                 <div>
                                     <h4 class="font-bold mb-1">Téléphone</h4>
-                                    <p class="text-gray-400">01 23 45 67 89</p>
+                                    <p class="text-gray-400">+243 977 421 421</p>
                                 </div>
                             </div>
                             
@@ -740,7 +731,7 @@
                                 </div>
                                 <div>
                                     <h4 class="font-bold mb-1">Email</h4>
-                                    <p class="text-gray-400">contact@ngs-service.fr</p>
+                                    <p class="text-gray-400">newgraceservice@gmail.com</p>
                                 </div>
                             </div>
                             
@@ -750,27 +741,12 @@
                                 </div>
                                 <div>
                                     <h4 class="font-bold mb-1">Horaires</h4>
-                                    <p class="text-gray-400">Lundi au vendredi : 9h-18h</p>
-                                    <p class="text-gray-400">Samedi : 10h-17h</p>
+                                    <p class="text-gray-400">Lundi au Samedi : 8h 00 -17h 00</p>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </div>                    
                     
-                    <!-- FAQ -->
-                    <div>
-                        <h3 class="text-2xl font-bold mb-6">Questions fréquentes</h3>
-                        <div class="space-y-4">
-                            <div class="bg-gray-800 rounded-xl p-6">
-                                <h4 class="font-bold mb-2">Quel est le délai de fabrication ?</h4>
-                                <p class="text-gray-400 text-sm">En moyenne 3 à 4 semaines selon la complexité du projet.</p>
-                            </div>
-                            <div class="bg-gray-800 rounded-xl p-6">
-                                <h4 class="font-bold mb-2">Proposez-vous la pose ?</h4>
-                                <p class="text-gray-400 text-sm">Oui, nos experts NGS installent tous nos produits.</p>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -780,18 +756,7 @@
     <footer class="py-12 bg-gray-950 text-white">
         <div class="max-w-7xl mx-auto px-6">
             <div class="flex flex-col md:flex-row justify-between items-center">
-                <div class="mb-8 md:mb-0">
-                    <div class="flex items-center mb-4">
-                        <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center pulse-grace">
-                            <span class="font-bold text-white text-lg">NGS</span>
-                        </div>
-                        <div class="ml-4">
-                            <h2 class="font-display text-xl font-bold">New Grace Service</h2>
-                            <p class="text-gray-500 text-sm">Rideaux sur mesure d'exception | depuis 1995</p>
-                        </div>
-                    </div>
-                    <p class="text-gray-500 text-sm">© 2023 NGS - New Grace Service. Tous droits réservés.</p>
-                </div>
+                
                 
                 <div class="flex space-x-6">
                     <a href="#" class="text-gray-400 hover:text-white transition">
@@ -808,7 +773,7 @@
             
             <div class="border-t border-gray-800 mt-12 pt-8 text-center text-gray-500 text-sm">
                 <p>Fabrication française | Matériaux éco-responsables | Garantie 5 ans</p>
-                <p class="mt-2">Anciennement Julien_Rideau - Nouveau nom : <span class="text-accent">New Grace Service (NGS)</span></p>
+                <p class="mt-2"> Nouveau nom : <span class="text-accent">New Grace Service (NGS)</span></p>
             </div>
         </div>
     </footer>

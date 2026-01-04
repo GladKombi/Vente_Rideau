@@ -67,14 +67,13 @@ try {
     $query->bindValue(':offset', $offset, PDO::PARAM_INT);
     $query->execute();
     $produits = $query->fetchAll(PDO::FETCH_ASSOC);
-    
+
     // Compter les actifs pour la carte de stats
     $active_count_total = $pdo->query("SELECT COUNT(*) FROM produits WHERE actif = 1 AND statut = 0")->fetchColumn();
-    
+
     // Statistiques par type de produit
     $produits_metres = $pdo->query("SELECT COUNT(*) FROM produits WHERE umProduit = 'metres' AND statut = 0")->fetchColumn();
     $produits_pieces = $pdo->query("SELECT COUNT(*) FROM produits WHERE umProduit = 'pieces' AND statut = 0")->fetchColumn();
-
 } catch (PDOException $e) {
     $_SESSION['flash_message'] = [
         'text' => "Erreur lors du chargement des produits: " . $e->getMessage(),
@@ -93,7 +92,7 @@ try {
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>Gestion des produits - NGS (New Grace Service)</title>
-    
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -126,8 +125,8 @@ try {
         }
 
         .gradient-blue-btn {
-            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%); 
-            color: white; 
+            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%);
+            color: white;
             transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
         }
 
@@ -224,7 +223,7 @@ try {
             background-color: #FEE2E2;
             color: #991B1B;
         }
-        
+
         /* NOUVELLES STYLES POUR LA SIDEBAR AVEC DÉFILEMENT */
         .sidebar {
             display: flex;
@@ -233,7 +232,9 @@ try {
             overflow: hidden;
         }
 
-        .sidebar-header, .sidebar-profile, .sidebar-footer {
+        .sidebar-header,
+        .sidebar-profile,
+        .sidebar-footer {
             flex-shrink: 0;
         }
 
@@ -344,14 +345,16 @@ try {
             display: inline-block;
             width: 20px;
             height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
+            border: 3px solid rgba(255, 255, 255, .3);
             border-radius: 50%;
             border-top-color: #fff;
             animation: spin 1s ease-in-out infinite;
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* Badge de notification */
@@ -387,26 +390,26 @@ try {
                 padding-top: 0.5rem;
                 padding-bottom: 0.5rem;
             }
-            
+
             .nav-link {
                 padding: 0.75rem 1rem;
             }
-            
+
             .stats-card {
                 margin-bottom: 1rem;
             }
-            
+
             .action-buttons {
                 flex-direction: column;
                 gap: 0.5rem;
             }
-            
+
             .action-btn {
                 width: 100%;
                 justify-content: center;
             }
         }
-        
+
         /* Style pour l'affichage du prochain matricule */
         .next-matricule {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -416,7 +419,7 @@ try {
             margin-bottom: 20px;
             text-align: center;
         }
-        
+
         .matricule-code {
             font-family: monospace;
             font-size: 1.5rem;
@@ -427,17 +430,17 @@ try {
             display: inline-block;
             margin-top: 5px;
         }
-        
+
         /* Styles pour les boutons radio personnalisés */
         .unit-option {
             position: relative;
             cursor: pointer;
         }
-        
-        .unit-option input[type="radio"]:checked ~ .checkmark {
+
+        .unit-option input[type="radio"]:checked~.checkmark {
             display: flex;
         }
-        
+
         .checkmark {
             display: none;
             position: absolute;
@@ -452,25 +455,25 @@ try {
             justify-content: center;
             font-size: 10px;
         }
-        
-        .unit-option input[type="radio"]:checked ~ .unit-content {
+
+        .unit-option input[type="radio"]:checked~.unit-content {
             border-color: #7B61FF;
             background-color: rgba(123, 97, 255, 0.05);
         }
-        
+
         /* Badge pour type de produit */
         .badge-metres {
             background-color: #E0F2FE;
             color: #0369A1;
             border: 1px solid #BAE6FD;
         }
-        
+
         .badge-pieces {
             background-color: #DCFCE7;
             color: #166534;
             border: 1px solid #BBF7D0;
         }
-        
+
         .badge-rideau {
             background-color: #FEF3C7;
             color: #92400E;
@@ -521,7 +524,7 @@ try {
                 <a href="boutiques.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-store w-5 text-gray-300"></i>
                     <span>Boutiques</span>
-                </a>                
+                </a>
                 <a href="produits.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10">
                     <i class="fas fa-box w-5 text-white"></i>
                     <span>Produits</span>
@@ -539,9 +542,9 @@ try {
                     <i class="fas fa-users w-5 text-gray-300"></i>
                     <span>Utilisateurs</span>
                 </a>
-                <a href="rapports.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
-                    <span>Rapports</span>
+                <a href="rapports_pdg.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-chart-bar w-5 text-white"></i>
+                    <span>Rapports PDG</span>
                 </a>
             </nav>
 
@@ -685,7 +688,7 @@ try {
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200" id="tableBody">
-                                <?php foreach ($produits as $index => $produit): 
+                                <?php foreach ($produits as $index => $produit):
                                     $isRideau = substr($produit['matricule'], 0, 3) === 'Rid';
                                 ?>
                                     <tr class="produit-row hover:bg-gray-50 transition-colors fade-in-row"
@@ -728,18 +731,18 @@ try {
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <div class="flex space-x-2 action-buttons">
-                                                <button onclick="openProduitModal('<?= htmlspecialchars(addslashes($produit['matricule'])) ?>'); return false;" 
-                                                        class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                                                <button onclick="openProduitModal('<?= htmlspecialchars(addslashes($produit['matricule'])) ?>'); return false;"
+                                                    class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
                                                     <i class="fas fa-edit mr-1"></i>
                                                     <span class="hidden md:inline">Modifier</span>
                                                 </button>
                                                 <button onclick="openToggleModal('<?= htmlspecialchars(addslashes($produit['matricule'])) ?>', '<?= htmlspecialchars(addslashes($produit['designation'])) ?>', <?= $produit['actif'] ?>); return false;"
-                                                        class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white <?= $produit['actif'] ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700' ?> focus:outline-none focus:ring-2 focus:ring-offset-2 <?= $produit['actif'] ? 'focus:ring-orange-500' : 'focus:ring-green-500' ?> transition-colors">
+                                                    class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white <?= $produit['actif'] ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700' ?> focus:outline-none focus:ring-2 focus:ring-offset-2 <?= $produit['actif'] ? 'focus:ring-orange-500' : 'focus:ring-green-500' ?> transition-colors">
                                                     <i class="fas fa-power-off mr-1"></i>
                                                     <span class="hidden md:inline"><?= $produit['actif'] ? 'Désactiver' : 'Activer' ?></span>
                                                 </button>
                                                 <button onclick="openDeleteModal('<?= htmlspecialchars(addslashes($produit['matricule'])) ?>', '<?= htmlspecialchars(addslashes($produit['designation'])) ?>'); return false;"
-                                                        class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors">
+                                                    class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors">
                                                     <i class="fas fa-trash-alt mr-1"></i>
                                                     <span class="hidden md:inline">Supprimer</span>
                                                 </button>
@@ -815,7 +818,7 @@ try {
             </main>
         </div>
     </div>
-    
+
     <div id="produitModal" class="modal transition-all duration-300 ease-in-out">
         <div class="modal-content slide-down p-6">
             <div class="flex justify-between items-center border-b pb-3 mb-4">
@@ -824,7 +827,7 @@ try {
                     <i class="fas fa-times text-2xl"></i>
                 </button>
             </div>
-            
+
             <form id="produitForm" method="POST" action="../models/traitement/produit-post.php">
                 <input type="hidden" name="matricule_original" id="matriculeOriginal">
 
@@ -832,17 +835,17 @@ try {
                     <div id="matriculeField" style="display: none;">
                         <label for="matricule" class="block text-sm font-medium text-gray-700 mb-1">Matricule</label>
                         <input type="text" name="matricule" id="matricule" readonly
-                               class="w-full border-gray-300 bg-gray-100 rounded-lg shadow-sm p-3 cursor-not-allowed">
+                            class="w-full border-gray-300 bg-gray-100 rounded-lg shadow-sm p-3 cursor-not-allowed">
                         <p class="text-xs text-gray-500 mt-1">Identifiant unique du produit (généré automatiquement)</p>
                     </div>
-                    
+
                     <div>
                         <label for="designation" class="block text-sm font-medium text-gray-700 mb-1">Désignation du produit *</label>
                         <input type="text" name="designation" id="designation" required
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
-                               placeholder="Ex: Rideau en velours rouge, Coussin décoratif, Tringle à rideau...">
+                            class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
+                            placeholder="Ex: Rideau en velours rouge, Coussin décoratif, Tringle à rideau...">
                     </div>
-                    
+
                     <!-- CHAMP : Unité de mesure -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Unité de mesure *</label>
@@ -889,13 +892,13 @@ try {
                             </label>
                         </div>
                     </div>
-                    
+
                     <div class="flex items-center space-x-2">
                         <input type="checkbox" name="actif" id="actif" value="1" checked
-                               class="h-4 w-4 text-secondary border-gray-300 rounded focus:ring-secondary">
+                            class="h-4 w-4 text-secondary border-gray-300 rounded focus:ring-secondary">
                         <label for="actif" class="text-sm font-medium text-gray-700">Produit actif (disponible à la vente)</label>
                     </div>
-                    
+
                     <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <div class="flex items-start space-x-3">
                             <i class="fas fa-info-circle text-blue-500 mt-0.5"></i>
@@ -913,11 +916,11 @@ try {
 
                 <div class="mt-6 flex justify-end space-x-3">
                     <button type="button" onclick="closeProduitModal()"
-                            class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
+                        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
                         Annuler
                     </button>
                     <button type="submit" name="ajouter_produit" id="submitButton"
-                            class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
+                        class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
                         Enregistrer le produit
                     </button>
                 </div>
@@ -933,7 +936,7 @@ try {
                     <i class="fas fa-times text-2xl"></i>
                 </button>
             </div>
-            
+
             <div class="text-center py-4">
                 <i id="toggleIcon" class="fas fa-power-off text-5xl mb-4 text-gray-500"></i>
                 <p class="text-lg font-medium text-gray-800 mb-2">Voulez-vous vraiment continuer ?</p>
@@ -943,11 +946,11 @@ try {
             <form id="toggleForm" method="POST" action="../models/traitement/produit-post.php" class="mt-6 flex justify-center space-x-3">
                 <input type="hidden" name="matricule" id="toggleProduitMatricule">
                 <button type="button" onclick="closeToggleModal()"
-                        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
+                    class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
                     Annuler
                 </button>
                 <button type="submit" name="toggle_actif" id="toggleConfirmButton"
-                        class="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
+                    class="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
                     Confirmer
                 </button>
             </form>
@@ -962,7 +965,7 @@ try {
                     <i class="fas fa-times text-2xl"></i>
                 </button>
             </div>
-            
+
             <div class="text-center py-4">
                 <i class="fas fa-trash-alt text-5xl mb-4 text-red-500"></i>
                 <p class="text-lg font-bold text-red-700 mb-2">ATTENTION ! Suppression (Archivage)</p>
@@ -972,11 +975,11 @@ try {
             <form id="deleteForm" method="POST" action="../models/traitement/produit-post.php" class="mt-6 flex justify-center space-x-3">
                 <input type="hidden" name="matricule" id="deleteProduitMatricule">
                 <button type="button" onclick="closeDeleteModal()"
-                        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
+                    class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
                     Annuler
                 </button>
                 <button type="submit" name="supprimer_produit"
-                        class="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
+                    class="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
                     Oui, Archiver ce produit
                 </button>
             </form>
@@ -1000,7 +1003,7 @@ try {
 
         // --- DÉTECTION DU SCROLL DANS LA SIDEBAR ---
         const sidebarNav = document.querySelector('.sidebar-nav');
-        
+
         sidebarNav.addEventListener('scroll', function() {
             if (this.scrollTop > 10) {
                 this.classList.add('scrolling');
@@ -1012,7 +1015,7 @@ try {
         // --- GESTION DES LIENS ACTIFS ---
         const currentPage = window.location.pathname.split('/').pop();
         const navLinks = document.querySelectorAll('.nav-link');
-        
+
         navLinks.forEach(link => {
             const href = link.getAttribute('href');
             if (href === currentPage) {
@@ -1046,12 +1049,12 @@ try {
                 e.preventDefault();
                 toggleSidebar();
             }
-            
+
             // Échap pour fermer la sidebar
             if (e.key === 'Escape' && !sidebar.classList.contains('-translate-x-full')) {
                 toggleSidebar();
             }
-            
+
             // Ctrl+F pour focus la recherche
             if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
                 e.preventDefault();
@@ -1086,14 +1089,14 @@ try {
 
         function openProduitModal(matricule = null) {
             produitForm.reset();
-            
+
             if (matricule) {
                 // Mode Modification
                 modalTitle.textContent = "Modifier le produit " + matricule + " - NGS";
                 submitButton.textContent = "Modifier le produit";
                 submitButton.name = 'modifier_produit';
                 matriculeOriginal.value = matricule;
-                
+
                 // Afficher le champ matricule en lecture seule
                 matriculeField.style.display = 'block';
                 matriculeInput.value = matricule;
@@ -1105,7 +1108,7 @@ try {
                         if (data.success) {
                             document.getElementById('designation').value = data.produit.designation;
                             document.getElementById('actif').checked = data.produit.actif == 1;
-                            
+
                             // Définir l'unité de mesure
                             if (data.produit.umProduit) {
                                 if (data.produit.umProduit === 'metres') {
@@ -1135,7 +1138,7 @@ try {
                 submitButton.textContent = "Enregistrer le produit";
                 submitButton.name = 'ajouter_produit';
                 matriculeOriginal.value = '';
-                
+
                 // Cacher le champ matricule (généré automatiquement)
                 matriculeField.style.display = 'none';
                 document.getElementById('actif').checked = true;
@@ -1164,7 +1167,7 @@ try {
                 document.querySelectorAll('.unit-option .unit-content').forEach(content => {
                     content.classList.remove('border-blue-500', 'border-green-500', 'bg-blue-50', 'bg-green-50');
                 });
-                
+
                 // Appliquer les styles à l'option sélectionnée
                 const parent = this.closest('.unit-option');
                 const content = parent.querySelector('.unit-content');
@@ -1192,9 +1195,9 @@ try {
 
             toggleModalTitle.textContent = "Confirmer la " + action + " - NGS";
             toggleModalText.innerHTML = `Le statut du produit <strong>${designation}</strong> (${matricule}) va passer à <strong>${action}</strong>.<br>Voulez-vous confirmer cette action ?`;
-            
+
             toggleIcon.className = `fas fa-power-off text-5xl mb-4 ${iconClass}`;
-            
+
             toggleConfirmButton.textContent = buttonText;
             toggleConfirmButton.className = `px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md ${buttonColor}`;
 
@@ -1259,7 +1262,7 @@ try {
             rows.forEach((row, index) => {
                 row.style.animationDelay = `${index * 0.05}s`;
             });
-            
+
             // Initialiser les styles des options d'unité
             document.querySelectorAll('.unit-option input[type="radio"]').forEach(radio => {
                 if (radio.checked) {
@@ -1273,7 +1276,7 @@ try {
             element.addEventListener('mouseenter', function() {
                 this.style.transform = 'translateY(-3px)';
             });
-            
+
             element.addEventListener('mouseleave', function() {
                 this.style.transform = 'translateY(0)';
             });
@@ -1300,11 +1303,12 @@ try {
                 </div>
             `;
             document.body.appendChild(notification);
-            
+
             setTimeout(() => {
                 notification.remove();
             }, 3000);
         }
     </script>
 </body>
+
 </html>

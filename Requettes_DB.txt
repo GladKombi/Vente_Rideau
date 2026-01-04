@@ -52,6 +52,18 @@ CREATE TABLE stock (
 );
 
 
+-- Table pour les commandes (Les ventes)
+CREATE TABLE commandes (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    numero_facture	varchar(50),
+    client_nom	varchar(50),
+    date_commande	datetime,
+    etat	enum('brouillon', 'payee') DEFAULT 'brouillon',
+    boutique_id	int,
+    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime la commande
+);
+
+
 -- Table pour les détails des commandes (produits vendus)
 CREATE TABLE commande_produits (
     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -97,4 +109,15 @@ CREATE TABLE transferts (
     statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime un transfert
 );
 
+
+-- Table pour mouvement de caisse par boutique
+CREATE TABLE mouvement_caisse (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    id_boutique INT, -- il recupere id de la boutique qui enregistre le mouvement
+    type_mouvement ENUM('entrée', 'sortie') NOT NULL,
+    montant DECIMAL(15,2) NOT NULL,
+    motif VARCHAR(200),
+    date_mouvement DATETIME DEFAULT CURRENT_TIMESTAMP,
+    statut int -- il est 0 par defaut, Le statut change à 1 quand on supprime un mouvement  
+);
 

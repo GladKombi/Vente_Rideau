@@ -476,9 +476,9 @@ try {
                     <span>Utilisateurs</span>
                     <span class="notification-badge"><?= $total_utilisateurs ?></span>
                 </a>
-                <a href="parametres.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-cog w-5 text-gray-300"></i>
-                    <span>Paramètres</span>
+                <a href="rapports_pdg.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-chart-bar w-5 text-white"></i>
+                    <span>Rapports PDG</span>
                 </a>
             </nav>
 
