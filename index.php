@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NGS | New Grace Service - Rideaux sur mesure d'exception</title>
+    <title>NGS | New Grace Service - Excellence en rideaux sur mesure</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
             --primary: #0A2540;
@@ -54,14 +54,21 @@
             background-clip: text;
         }
         
+        .gradient-border {
+            position: relative;
+            background: linear-gradient(135deg, #0A2540, #1E3A5F) border-box;
+            border: 2px solid transparent;
+        }
+        
         .card-glass {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
         }
         
         .shadow-soft {
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
         }
         
         .dark-mode .shadow-soft {
@@ -69,54 +76,79 @@
         }
         
         .shadow-hover {
-            transition: box-shadow 0.3s ease;
+            transition: box-shadow 0.3s ease, transform 0.3s ease;
         }
         
         .shadow-hover:hover {
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
-        }
-        
-        .dark-mode .shadow-hover:hover {
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-        }
-        
-        .hover-lift {
-            transition: transform 0.3s ease;
-        }
-        
-        .hover-lift:hover {
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.12);
             transform: translateY(-8px);
         }
         
+        .dark-mode .shadow-hover:hover {
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.3);
+        }
+        
+        .hover-lift {
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        .hover-lift:hover {
+            transform: translateY(-12px);
+        }
+        
         .animate-fade-in {
-            animation: fadeIn 0.8s ease-out;
+            animation: fadeIn 1s ease-out forwards;
+            opacity: 0;
         }
         
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
+            from { opacity: 0; transform: translateY(30px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animate-slide-in {
+            animation: slideIn 0.8s ease-out forwards;
+            opacity: 0;
+        }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-30px); }
+            to { opacity: 1; transform: translateX(0); }
         }
         
         .grid-pattern {
             background-image: 
-                linear-gradient(rgba(10, 37, 64, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(10, 37, 64, 0.03) 1px, transparent 1px);
-            background-size: 50px 50px;
+                radial-gradient(circle at 1px 1px, rgba(10, 37, 64, 0.03) 1px, transparent 0);
+            background-size: 40px 40px;
         }
         
         .dark-mode .grid-pattern {
             background-image: 
-                linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+                radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.05) 1px, transparent 0);
+        }
+        
+        /* Animations spécifiques */
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .float-animation {
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        @keyframes pulse-subtle {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .pulse-subtle {
+            animation: pulse-subtle 2s ease-in-out infinite;
         }
         
         /* Mode sombre spécifique */
-        .dark-mode .bg-gray-50 {
-            background-color: #1E293B;
-        }
-        
         .dark-mode .bg-white {
-            background-color: #334155;
+            background-color: #1E293B;
         }
         
         .dark-mode .text-gray-800 {
@@ -135,683 +167,939 @@
             color: #F1F5F9;
         }
         
-        .dark-mode .border-gray-100 {
+        .dark-mode .border-gray-200 {
             border-color: #334155;
         }
         
-        .dark-mode .bg-gray-800 {
+        .dark-mode .bg-gray-50 {
             background-color: #1E293B;
         }
         
-        .dark-mode .bg-gray-900 {
-            background-color: #0F172A;
+        .dark-mode .bg-gray-100 {
+            background-color: #334155;
         }
         
-        .dark-mode .bg-gray-950 {
-            background-color: #0A0F1C;
-        }
-        
-        .dark-mode .border-gray-700 {
-            border-color: #475569;
-        }
-        
-        .dark-mode .border-gray-800 {
-            border-color: #475569;
-        }
-        
-        /* Bouton mode sombre */
-        .theme-toggle {
+        /* Navigation améliorée */
+        .nav-link {
             position: relative;
-            width: 60px;
-            height: 30px;
-            border-radius: 50px;
+            padding: 8px 0;
+        }
+        
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #7B61FF, #00D4AA);
+            transition: width 0.3s ease;
+        }
+        
+        .nav-link:hover::after {
+            width: 100%;
+        }
+        
+        /* Bouton CTA amélioré */
+        .cta-button {
             background: linear-gradient(135deg, #7B61FF 0%, #00D4AA 100%);
-            cursor: pointer;
+            position: relative;
+            overflow: hidden;
             transition: all 0.3s ease;
         }
         
-        .theme-toggle::before {
+        .cta-button::before {
             content: '';
             position: absolute;
-            top: 3px;
-            left: 3px;
-            width: 24px;
-            height: 24px;
-            background: white;
-            border-radius: 50%;
-            transition: transform 0.3s ease;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
         }
         
-        .dark-mode .theme-toggle::before {
-            transform: translateX(30px);
+        .cta-button:hover::before {
+            left: 100%;
         }
         
-        .theme-toggle i {
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 40px rgba(123, 97, 255, 0.3);
+        }
+        
+        /* Icônes réseaux sociaux */
+        .social-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+        
+        .social-icon:hover {
+            transform: translateY(-5px) scale(1.1);
+        }
+        
+        .social-whatsapp { background: linear-gradient(135deg, #25D366, #128C7E); }
+        .social-telegram { background: linear-gradient(135deg, #0088CC, #006699); }
+        .social-facebook { background: linear-gradient(135deg, #1877F2, #0A5FBD); }
+        .social-instagram { background: linear-gradient(135deg, #E1306C, #C13584); }
+        .social-phone { background: linear-gradient(135deg, #00D4AA, #00B894); }
+        .social-email { background: linear-gradient(135deg, #7B61FF, #5D45DB); }
+        
+        /* Loader pour images */
+        .image-loader {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+        
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        
+        /* Marquee animation pour badges */
+        @keyframes marquee {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+        
+        .marquee-container {
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        
+        .marquee-content {
+            display: inline-block;
+            animation: marquee 20s linear infinite;
+        }
+        
+        /* Stats cards */
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .stat-card::before {
+            content: '';
             position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 14px;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(123, 97, 255, 0.1), rgba(0, 212, 170, 0.1));
+            opacity: 0;
+            transition: opacity 0.3s ease;
         }
         
-        .theme-toggle .fa-sun {
-            left: 8px;
-            color: white;
+        .stat-card:hover::before {
+            opacity: 1;
         }
         
-        .theme-toggle .fa-moon {
-            right: 8px;
-            color: white;
+        /* Testimonial card */
+        .testimonial-card {
+            position: relative;
         }
         
-        /* Animation pour le logo NGS */
-        @keyframes pulse-grace {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.8; }
-        }
-        
-        .pulse-grace {
-            animation: pulse-grace 2s ease-in-out infinite;
+        .testimonial-card::before {
+            content: '"';
+            position: absolute;
+            top: -20px;
+            left: 20px;
+            font-size: 80px;
+            color: rgba(123, 97, 255, 0.1);
+            font-family: serif;
+            z-index: 0;
         }
     </style>
 </head>
 <body class="text-gray-800 bg-white overflow-x-hidden">
-    <!-- Navigation Minimaliste -->
-    <header class="fixed w-full z-50 py-4 px-6 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md">
+    <!-- Navigation Premium -->
+    <header class="fixed w-full z-50 py-4 px-6 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
         <div class="max-w-7xl mx-auto">
             <div class="flex justify-between items-center">
                 <!-- Logo NGS -->
-                <div class="flex items-center space-x-2">
-                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center pulse-grace">
-                        <span class="font-bold text-white text-lg">NGS</span>
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 rounded-full gradient-accent flex items-center justify-center shadow-lg float-animation">
+                        <span class="font-bold text-white text-xl font-display">NGS</span>
                     </div>
                     <div>
-                        <h1 class="font-display text-xl font-bold text-gray-900 dark:text-white">NGS</h1>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">New Grace Service | RDC</p>
+                        <h1 class="font-display text-2xl font-bold text-gray-900 dark:text-white">New Grace Service</h1>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 tracking-wider">EXCELLENCE DEPUIS Bbo</p>
                     </div>
                 </div>
                 
                 <!-- Menu Desktop -->
-                <nav class="hidden lg:flex items-center space-x-10">
-                    <a href="#" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Accueil</a>
-                    <a href="#produits" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Collection</a>
-                    <a href="#services" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Services</a>
-                    <a href="#boutiques" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Boutiques</a>
-                    <a href="#contact" class="px-5 py-2 bg-gray-900 dark:bg-gray-800 text-white rounded-full font-medium hover:bg-gray-800 dark:hover:bg-gray-700 transition">Contact</a>
-                    <a href="login.php" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Login</a>
-                    <!-- Bouton mode sombre -->
-                    <div class="theme-toggle ml-4" id="theme-toggle">
-                        <i class="fas fa-sun"></i>
-                        <i class="fas fa-moon"></i>
+                <nav class="hidden lg:flex items-center space-x-12">
+                    <a href="#" class="nav-link text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium text-sm uppercase tracking-wide">Accueil</a>
+                    <a href="#produits" class="nav-link text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium text-sm uppercase tracking-wide">Collection</a>
+                    <a href="#services" class="nav-link text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium text-sm uppercase tracking-wide">Services</a>
+                    <a href="#boutiques" class="nav-link text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium text-sm uppercase tracking-wide">Boutiques</a>
+                    <a href="#contact" class="nav-link text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium text-sm uppercase tracking-wide">Contact</a>
+                    
+                    <div class="flex items-center space-x-4">
+                        <a href="login.php" class="px-6 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition-all text-sm uppercase tracking-wide">
+                            Espace Pro
+                        </a>
+                        
+                        <!-- Bouton mode sombre -->
+                        <div class="theme-toggle ml-2 cursor-pointer" id="theme-toggle">
+                            <i class="fas fa-sun"></i>
+                            <i class="fas fa-moon"></i>
+                        </div>
                     </div>
                 </nav>
                 
+                <!-- Menu Mobile -->
                 <div class="flex items-center space-x-4 lg:hidden">
-                    <!-- Bouton mode sombre mobile -->
-                    <div class="theme-toggle" id="theme-toggle-mobile">
+                    <div class="theme-toggle cursor-pointer" id="theme-toggle-mobile">
                         <i class="fas fa-sun"></i>
                         <i class="fas fa-moon"></i>
                     </div>
                     
-                    <!-- Menu Mobile Toggle -->
                     <button id="menu-toggle" class="text-gray-700 dark:text-gray-300">
-                        <i class="fas fa-bars text-xl"></i>
+                        <i class="fas fa-bars text-2xl"></i>
                     </button>
                 </div>
             </div>
             
             <!-- Menu Mobile -->
-            <div id="mobile-menu" class="hidden lg:hidden mt-4 pb-4 border-t border-gray-100 dark:border-gray-800">
-                <div class="flex flex-col space-y-4 pt-4">
-                    <a href="#" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Accueil</a>
-                    <a href="#produits" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Collection</a>
-                    <a href="#services" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Services</a>
-                    <a href="#boutiques" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Boutiques</a>
-                    <a href="#contact" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Contact</a>
-                    <a href="login.php" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Login</a>
+            <div id="mobile-menu" class="hidden lg:hidden mt-4 pb-4">
+                <div class="flex flex-col space-y-4 bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-soft">
+                    <a href="#" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium py-2 border-b border-gray-100 dark:border-gray-700">Accueil</a>
+                    <a href="#produits" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium py-2 border-b border-gray-100 dark:border-gray-700">Collection</a>
+                    <a href="#services" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium py-2 border-b border-gray-100 dark:border-gray-700">Services</a>
+                    <a href="#boutiques" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium py-2 border-b border-gray-100 dark:border-gray-700">Boutiques</a>
+                    <a href="#contact" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium py-2 border-b border-gray-100 dark:border-gray-700">Contact</a>
+                    <a href="login.php" class="px-4 py-3 gradient-accent text-white rounded-xl font-medium text-center mt-2">
+                        Espace Professionnel
+                    </a>
                 </div>
             </div>
         </div>
     </header>
 
-    <!-- Hero Section avec vidéo/gradient -->
-    <section class="pt-24 pb-20 gradient-bg text-white overflow-hidden">
-        <div class="max-w-7xl mx-auto px-6">
+    <!-- Hero Section Premium -->
+    <section class="pt-32 pb-24 gradient-bg text-white overflow-hidden relative">
+        <div class="absolute inset-0 grid-pattern opacity-10"></div>
+        <div class="absolute top-20 right-20 w-96 h-96 bg-gradient-to-r from-purple-500/10 to-teal-500/10 rounded-full blur-3xl"></div>
+        
+        <div class="max-w-7xl mx-auto px-6 relative z-10">
             <div class="flex flex-col lg:flex-row items-center">
-                <div class="lg:w-1/2 animate-fade-in">
-                    <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm mb-6">
-                        <span class="text-sm">Nouveau nom, même excellence</span>
-                        <span class="px-2 py-0.5 gradient-accent rounded-full text-xs">NGS</span>
+                <div class="lg:w-1/2 animate-slide-in">
+                    <div class="inline-flex items-center space-x-3 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm mb-8">
+                        <div class="w-2 h-2 rounded-full bg-accent pulse-subtle"></div>
+                        <span class="text-sm font-medium tracking-wide">NOUVEAU NOM • MÊME EXCELLENCE</span>
                     </div>
-                    <h1 class="text-5xl lg:text-6xl font-display font-bold mb-6 leading-tight">
-                        <span class="gradient-text">New Grace Service</span><br>
-                        L'art du rideau sur mesure
+                    
+                    <h1 class="text-5xl lg:text-7xl font-display font-bold mb-8 leading-tight">
+                        L'art du rideau
+                        <span class="block gradient-text mt-2">réinventé</span>
                     </h1>
-                    <p class="text-xl text-gray-300 mb-10 max-w-2xl">
-                        Transformez vos intérieurs avec nos créations d'exception. Faites de votre maison un paradis sur terre.
+                    
+                    <p class="text-xl text-gray-300 mb-10 max-w-2xl leading-relaxed">
+                        Chez New Grace Service, nous transformons vos intérieurs avec des créations sur mesure qui allient tradition artisanale et design contemporain.
                     </p>
-                    <div class="flex flex-col sm:flex-row gap-4">
-                        <a href="#produits" class="px-8 py-4 gradient-accent text-white rounded-full font-medium hover:opacity-90 transition inline-flex items-center justify-center">
-                            Découvrir la collection
-                            <i class="fas fa-arrow-right ml-3"></i>
+                    
+                    <div class="flex flex-col sm:flex-row gap-6">
+                        <a href="#produits" class="cta-button px-10 py-5 text-white rounded-full font-bold text-lg flex items-center justify-center space-x-3">
+                            <span>Explorer la collection</span>
+                            <i class="fas fa-arrow-right text-xl"></i>
                         </a>
-                        <a href="#services" class="px-8 py-4 border-2 border-white/30 text-white rounded-full font-medium hover:bg-white/10 transition text-center">
-                            Prendre rendez-vous
+                        <a href="#contact" class="px-10 py-5 border-2 border-white/30 text-white rounded-full font-medium hover:bg-white/10 transition-all flex items-center justify-center space-x-3">
+                            <i class="fas fa-calendar-alt"></i>
+                            <span>Consultation gratuite</span>
                         </a>
                     </div>
                     
-                    <!-- Stats -->
-                    <div class="flex flex-wrap gap-10 mt-16">
-                        <div>
-                            <div class="text-3xl font-bold">28+</div>
-                            <div class="text-gray-400">Ans d'expertise</div>
+                    <!-- Stats Premium -->
+                    <div class="flex flex-wrap gap-12 mt-16">
+                        <div class="stat-card bg-white/5 backdrop-blur-sm rounded-2xl p-6 min-w-[160px]">
+                            <div class="text-4xl font-bold mb-2">28+</div>
+                            <div class="text-gray-400 text-sm uppercase tracking-wide">Ans d'expertise</div>
                         </div>
-                        <div>
-                            <div class="text-3xl font-bold">5</div>
-                            <div class="text-gray-400">Boutiques</div>
+                        <div class="stat-card bg-white/5 backdrop-blur-sm rounded-2xl p-6 min-w-[160px]">
+                            <div class="text-4xl font-bold mb-2">2.5K+</div>
+                            <div class="text-gray-400 text-sm uppercase tracking-wide">Projets réalisés</div>
                         </div>
-                        <div>
-                            <div class="text-3xl font-bold">2500+</div>
-                            <div class="text-gray-400">Projets réalisés</div>
+                        <div class="stat-card bg-white/5 backdrop-blur-sm rounded-2xl p-6 min-w-[160px]">
+                            <div class="text-4xl font-bold mb-2">98%</div>
+                            <div class="text-gray-400 text-sm uppercase tracking-wide">Clients satisfaits</div>
                         </div>
                     </div>
                 </div>
                 
-                <div class="lg:w-1/2 mt-12 lg:mt-0 relative">
-                    <div class="relative rounded-3xl overflow-hidden shadow-2xl">
+                <div class="lg:w-1/2 mt-16 lg:mt-0 relative">
+                    <div class="relative rounded-3xl overflow-hidden shadow-2xl hover-lift">
+                        <div class="image-loader w-full h-[600px] rounded-3xl"></div>
                         <img src="https://images.unsplash.com/photo-1618220179428-22790b461013?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2729&q=80" 
-                             alt="Rideau design moderne" 
-                             class="w-full h-[600px] object-cover">
-                        <div class="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
+                             alt="Rideau design moderne NGS" 
+                             class="absolute inset-0 w-full h-full object-cover transition-opacity duration-500"
+                             onload="this.style.opacity=1"
+                             style="opacity:0">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
                     </div>
                     
-                    <!-- Floating card -->
-                    <div class="absolute -bottom-6 -left-6 bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-soft w-64">
-                        <div class="flex items-center mb-4">
-                            <div class="w-12 h-12 rounded-full gradient-accent flex items-center justify-center">
-                                <i class="fas fa-star text-white"></i>
+                    <!-- Floating badge -->
+                    <div class="absolute -bottom-6 -left-6 bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-soft w-72">
+                        <div class="flex items-center mb-6">
+                            <div class="w-14 h-14 rounded-full gradient-accent flex items-center justify-center shadow-lg">
+                                <i class="fas fa-star text-white text-xl"></i>
                             </div>
                             <div class="ml-4">
-                                <div class="font-bold text-gray-900 dark:text-white">4.9/5</div>
-                                <div class="text-sm text-gray-500 dark:text-gray-400">Avis clients</div>
+                                <div class="font-bold text-gray-900 dark:text-white text-2xl">4.9/5</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400">Note moyenne clients</div>
                             </div>
                         </div>
-                        <p class="text-gray-600 dark:text-gray-300 text-sm">"Excellente réalisation, un travail d'une précision remarquable."</p>
+                        <p class="text-gray-600 dark:text-gray-300 text-sm italic">"Une attention aux détails exceptionnelle et un service irréprochable."</p>
+                        <div class="flex items-center mt-4">
+                            <div class="w-8 h-8 rounded-full overflow-hidden mr-2">
+                                <img src="https://images.unsplash.com/photo-1494790108755-2616b786d4d9?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=80" 
+                                     alt="Client" class="w-full h-full object-cover">
+                            </div>
+                            <span class="text-sm font-medium">Marie K.</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Collection Produits -->
-    <section id="produits" class="py-20 bg-gray-50 dark:bg-gray-900">
+    <!-- Collection Produits Premium -->
+    <section id="produits" class="py-24 bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-800">
         <div class="max-w-7xl mx-auto px-6">
-            <div class="text-center mb-16">
-                <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6 dark:text-white">
-                    Collection <span class="gradient-text">Signature NGS</span>
+            <div class="text-center mb-20">
+                <h2 class="text-5xl lg:text-6xl font-display font-bold mb-8 dark:text-white">
+                    Collection <span class="gradient-text">Signature</span>
                 </h2>
-                <p class="text-gray-600 dark:text-gray-300 text-lg max-w-2xl mx-auto">
-                    Des pièces uniques conçues avec des matériaux d'exception, pour des intérieurs d'exception.
+                <p class="text-gray-600 dark:text-gray-300 text-xl max-w-3xl mx-auto leading-relaxed">
+                    Des pièces uniques, conçues avec les plus beaux tissus du monde pour des intérieurs d'exception.
                 </p>
             </div>
             
-            <!-- Filtres Minimalistes -->
-            <div class="flex flex-wrap justify-center gap-3 mb-12">
-                <button class="px-5 py-2 bg-gray-900 dark:bg-gray-800 text-white rounded-full font-medium">Tout voir</button>
-                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Luxe</button>
-                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Minimaliste</button>
-                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Naturel</button>
-                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Sur mesure</button>
-            </div>
-            
-            <!-- Grille Produits Moderne -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <!-- Produits Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-20">
                 <!-- Produit 1 -->
-                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in">
-                    <div class="h-64 overflow-hidden relative">
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift">
+                    <div class="h-80 overflow-hidden relative">
+                        <div class="image-loader w-full h-full"></div>
                         <img src="https://images.unsplash.com/photo-1616046229478-9901c5536a45?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1760&q=80" 
-                             alt="Rideaux en lin" 
-                             class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
-                        <div class="absolute top-4 right-4">
-                            <span class="px-3 py-1 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-full text-sm font-medium dark:text-white">Nouveau</span>
+                             alt="Collection Lin Premium" 
+                             class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                             onload="this.style.opacity=1"
+                             style="opacity:0">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
+                        <div class="absolute top-6 right-6">
+                            <span class="px-4 py-2 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-full text-sm font-medium dark:text-white uppercase tracking-wide">Nouveau</span>
                         </div>
                     </div>
                     <div class="p-8">
-                        <div class="flex justify-between items-start mb-4">
+                        <div class="flex justify-between items-start mb-6">
                             <div>
-                                <h3 class="font-bold text-xl mb-1 dark:text-white">Collection Lin</h3>
-                                <p class="text-gray-500 dark:text-gray-400">Tissu naturel et respirant</p>
+                                <h3 class="font-bold text-2xl mb-2 dark:text-white">Collection Lin Français</h3>
+                                <p class="text-gray-500 dark:text-gray-400">Tissu noble et respirant</p>
                             </div>
-                            <span class="font-bold text-2xl dark:text-white">$289</span>
+                            <span class="font-bold text-3xl gradient-text">$289</span>
                         </div>
-                        <p class="text-gray-600 dark:text-gray-300 mb-6">Lin français de haute qualité, tissé artisanalement pour une texture unique.</p>
+                        <p class="text-gray-600 dark:text-gray-300 mb-8 leading-relaxed">
+                            Lin cultivé en France, tissé artisanalement pour une texture unique et une durabilité exceptionnelle.
+                        </p>
                         <div class="flex justify-between items-center">
-                            <div class="flex items-center text-gray-500 dark:text-gray-400">
-                                <i class="fas fa-palette mr-2"></i>
-                                <span class="text-sm">12 coloris</span>
+                            <div class="flex items-center space-x-4">
+                                <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm">12 coloris</span>
+                                <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm">Éco-responsable</span>
                             </div>
-                            <button class="px-5 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition">
-                                Découvrir
+                            <button class="px-6 py-3 gradient-accent text-white rounded-full font-medium hover:opacity-90 transition">
+                                <i class="fas fa-eye mr-2"></i> Découvrir
                             </button>
                         </div>
                     </div>
                 </div>
                 
                 <!-- Produit 2 -->
-                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in" style="animation-delay: 0.1s">
-                    <div class="h-64 overflow-hidden relative">
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift">
+                    <div class="h-80 overflow-hidden relative">
+                        <div class="image-loader w-full h-full"></div>
                         <img src="https://images.unsplash.com/photo-1586023492125-27b2c045efd7?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1760&q=80" 
-                             alt="Stores japonais" 
-                             class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+                             alt="Stores Japonais NGS" 
+                             class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                             onload="this.style.opacity=1"
+                             style="opacity:0">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
                     </div>
                     <div class="p-8">
-                        <div class="flex justify-between items-start mb-4">
+                        <div class="flex justify-between items-start mb-6">
                             <div>
-                                <h3 class="font-bold text-xl mb-1 dark:text-white">Stores Japonais</h3>
+                                <h3 class="font-bold text-2xl mb-2 dark:text-white">Stores Japonais</h3>
                                 <p class="text-gray-500 dark:text-gray-400">Élégance et minimalisme</p>
                             </div>
-                            <span class="font-bold text-2xl dark:text-white">$349</span>
+                            <span class="font-bold text-3xl gradient-text">$349</span>
                         </div>
-                        <p class="text-gray-600 dark:text-gray-300 mb-6">Design épuré, matériaux nobles. Contrôle précis de la lumière naturelle.</p>
+                        <p class="text-gray-600 dark:text-gray-300 mb-8 leading-relaxed">
+                            Design épuré inspiré de l'artisanat japonais. Contrôle précis de la lumière naturelle pour une ambiance zen.
+                        </p>
                         <div class="flex justify-between items-center">
-                            <div class="flex items-center text-gray-500 dark:text-gray-400">
-                                <i class="fas fa-ruler-combined mr-2"></i>
-                                <span class="text-sm">Sur mesure</span>
+                            <div class="flex items-center space-x-4">
+                                <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm">Sur mesure</span>
+                                <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm">Motorisable</span>
                             </div>
-                            <button class="px-5 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition">
-                                Découvrir
+                            <button class="px-6 py-3 gradient-accent text-white rounded-full font-medium hover:opacity-90 transition">
+                                <i class="fas fa-eye mr-2"></i> Découvrir
                             </button>
                         </div>
                     </div>
                 </div>
                 
                 <!-- Produit 3 -->
-                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in" style="animation-delay: 0.2s">
-                    <div class="h-64 overflow-hidden relative">
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift">
+                    <div class="h-80 overflow-hidden relative">
+                        <div class="image-loader w-full h-full"></div>
                         <img src="https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1770&q=80" 
-                             alt="Voilages légers" 
-                             class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
-                        <div class="absolute top-4 right-4">
-                            <span class="px-3 py-1 gradient-accent text-white rounded-full text-sm font-medium">Best-seller</span>
+                             alt="Voilages Ciel Premium" 
+                             class="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                             onload="this.style.opacity=1"
+                             style="opacity:0">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
+                        <div class="absolute top-6 right-6">
+                            <span class="px-4 py-2 gradient-accent text-white rounded-full text-sm font-medium uppercase tracking-wide">Best-seller</span>
                         </div>
                     </div>
                     <div class="p-8">
-                        <div class="flex justify-between items-start mb-4">
+                        <div class="flex justify-between items-start mb-6">
                             <div>
-                                <h3 class="font-bold text-xl mb-1 dark:text-white">Voilages Ciel</h3>
+                                <h3 class="font-bold text-2xl mb-2 dark:text-white">Voilages Ciel</h3>
                                 <p class="text-gray-500 dark:text-gray-400">Légèreté et translucidité</p>
                             </div>
-                            <span class="font-bold text-2xl dark:text-white">$159</span>
+                            <span class="font-bold text-3xl gradient-text">$159</span>
                         </div>
-                        <p class="text-gray-600 dark:text-gray-300 mb-6">Tissu organza de soie, diffuse la lumière pour une ambiance apaisante.</p>
+                        <p class="text-gray-600 dark:text-gray-300 mb-8 leading-relaxed">
+                            Tissu organza de soie naturelle qui diffuse délicatement la lumière pour créer une atmosphère apaisante et romantique.
+                        </p>
                         <div class="flex justify-between items-center">
-                            <div class="flex items-center text-gray-500 dark:text-gray-400">
-                                <i class="fas fa-leaf mr-2"></i>
-                                <span class="text-sm">Éco-responsable</span>
+                            <div class="flex items-center space-x-4">
+                                <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm">Anti-UV</span>
+                                <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm">Entretien facile</span>
                             </div>
-                            <button class="px-5 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition">
-                                Découvrir
+                            <button class="px-6 py-3 gradient-accent text-white rounded-full font-medium hover:opacity-90 transition">
+                                <i class="fas fa-eye mr-2"></i> Découvrir
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
             
-            <div class="text-center mt-16">
-                <a href="#" class="inline-flex items-center text-gray-900 dark:text-white font-medium hover:underline">
-                    Voir toute la collection NGS
-                    <i class="fas fa-arrow-right ml-3"></i>
-                </a>
+            <!-- Badges de qualité -->
+            <div class="bg-white dark:bg-gray-800 rounded-3xl p-8 shadow-soft">
+                <div class="marquee-container">
+                    <div class="marquee-content flex space-x-12">
+                        <div class="flex items-center space-x-4">
+                            <i class="fas fa-leaf text-3xl text-accent"></i>
+                            <span class="text-lg font-medium dark:text-white">Matériaux durables</span>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <i class="fas fa-ruler-combined text-3xl text-accent"></i>
+                            <span class="text-lg font-medium dark:text-white">Sur mesure</span>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <i class="fas fa-shield-alt text-3xl text-accent"></i>
+                            <span class="text-lg font-medium dark:text-white">Garantie 5 ans</span>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <i class="fas fa-truck text-3xl text-accent"></i>
+                            <span class="text-lg font-medium dark:text-white">Installation incluse</span>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <i class="fas fa-hand-sparkles text-3xl text-accent"></i>
+                            <span class="text-lg font-medium dark:text-white">Fabriqué main</span>
+                        </div>
+                        <!-- Dupliquer pour l'animation continue -->
+                        <div class="flex items-center space-x-4">
+                            <i class="fas fa-leaf text-3xl text-accent"></i>
+                            <span class="text-lg font-medium dark:text-white">Matériaux durables</span>
+                        </div>
+                        <div class="flex items-center space-x-4">
+                            <i class="fas fa-ruler-combined text-3xl text-accent"></i>
+                            <span class="text-lg font-medium dark:text-white">Sur mesure</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
 
-    <!-- Services Premium -->
-    <section id="services" class="py-20 gradient-bg text-white">
+    <!-- Processus NGS -->
+    <section id="services" class="py-24 gradient-bg text-white">
         <div class="max-w-7xl mx-auto px-6">
-            <div class="text-center mb-16">
-                <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6">
-                    L'approche <span class="gradient-text">New Grace Service</span>
+            <div class="text-center mb-20">
+                <h2 class="text-5xl lg:text-6xl font-display font-bold mb-8">
+                    Notre <span class="gradient-text">Processus</span>
                 </h2>
-                <p class="text-gray-300 text-lg max-w-2xl mx-auto">
-                    Un service personnalisé de la conception à l'installation.
+                <p class="text-gray-300 text-xl max-w-3xl mx-auto leading-relaxed">
+                    Une approche méticuleuse en 4 étapes pour garantir un résultat parfait.
                 </p>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <!-- Service 1 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                <!-- Étape 1 -->
                 <div class="card-glass rounded-3xl p-8 hover-lift">
+                    <div class="text-4xl font-bold text-accent mb-6">01</div>
                     <div class="w-16 h-16 rounded-2xl gradient-accent flex items-center justify-center mb-6">
-                        <i class="fas fa-pen-ruler text-2xl"></i>
+                        <i class="fas fa-comments text-2xl"></i>
                     </div>
-                    <h3 class="text-2xl font-bold mb-4">Conception</h3>
+                    <h3 class="text-2xl font-bold mb-4">Consultation</h3>
                     <p class="text-gray-300 mb-6">
-                        Notre designer vient à votre domicile pour comprendre votre espace et vos besoins.
+                        Rencontre avec notre designer pour comprendre vos besoins et vos aspirations.
                     </p>
                     <ul class="space-y-3">
-                        <li class="flex items-center">
+                        <li class="flex items-center text-sm">
                             <i class="fas fa-check text-accent mr-3"></i>
-                            <span>Étude de vos besoins</span>
+                            <span>Analyse de votre espace</span>
                         </li>
-                        <li class="flex items-center">
+                        <li class="flex items-center text-sm">
                             <i class="fas fa-check text-accent mr-3"></i>
-                            <span>Choix des matériaux</span>
+                            <span>Conseils personnalisés</span>
                         </li>
-                        <li class="flex items-center">
+                        <li class="flex items-center text-sm">
                             <i class="fas fa-check text-accent mr-3"></i>
-                            <span>Proposition sur mesure</span>
+                            <span>Devis détaillé</span>
                         </li>
                     </ul>
                 </div>
                 
-                <!-- Service 2 -->
+                <!-- Étape 2 -->
                 <div class="card-glass rounded-3xl p-8 hover-lift">
+                    <div class="text-4xl font-bold text-accent mb-6">02</div>
+                    <div class="w-16 h-16 rounded-2xl gradient-accent flex items-center justify-center mb-6">
+                        <i class="fas fa-pencil-alt text-2xl"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4">Conception</h3>
+                    <p class="text-gray-300 mb-6">
+                        Création d'un projet sur mesure avec choix des matériaux et validation 3D.
+                    </p>
+                    <ul class="space-y-3">
+                        <li class="flex items-center text-sm">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Choix des matériaux</span>
+                        </li>
+                        <li class="flex items-center text-sm">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Visualisation 3D</span>
+                        </li>
+                        <li class="flex items-center text-sm">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Validation finale</span>
+                        </li>
+                    </ul>
+                </div>
+                
+                <!-- Étape 3 -->
+                <div class="card-glass rounded-3xl p-8 hover-lift">
+                    <div class="text-4xl font-bold text-accent mb-6">03</div>
                     <div class="w-16 h-16 rounded-2xl gradient-accent flex items-center justify-center mb-6">
                         <i class="fas fa-cut text-2xl"></i>
                     </div>
                     <h3 class="text-2xl font-bold mb-4">Fabrication</h3>
                     <p class="text-gray-300 mb-6">
-                        Nos artisans réalisent vos rideaux dans notre atelier avec un savoir-faire unique.
+                        Réalisation dans notre atelier par nos artisans experts.
                     </p>
                     <ul class="space-y-3">
-                        <li class="flex items-center">
+                        <li class="flex items-center text-sm">
                             <i class="fas fa-check text-accent mr-3"></i>
-                            <span>Coupe précise</span>
+                            <span>Coupe précise au laser</span>
                         </li>
-                        <li class="flex items-center">
+                        <li class="flex items-center text-sm">
                             <i class="fas fa-check text-accent mr-3"></i>
                             <span>Finitions main</span>
                         </li>
-                        <li class="flex items-center">
+                        <li class="flex items-center text-sm">
                             <i class="fas fa-check text-accent mr-3"></i>
                             <span>Contrôle qualité</span>
                         </li>
                     </ul>
                 </div>
                 
-                <!-- Service 3 -->
+                <!-- Étape 4 -->
                 <div class="card-glass rounded-3xl p-8 hover-lift">
+                    <div class="text-4xl font-bold text-accent mb-6">04</div>
                     <div class="w-16 h-16 rounded-2xl gradient-accent flex items-center justify-center mb-6">
-                        <i class="fas fa-toolbox text-2xl"></i>
+                        <i class="fas fa-tools text-2xl"></i>
                     </div>
                     <h3 class="text-2xl font-bold mb-4">Installation</h3>
                     <p class="text-gray-300 mb-6">
-                        Nos experts installent vos rideaux avec précision pour un rendu parfait.
+                        Pose par nos techniciens experts et conseils d'entretien.
                     </p>
                     <ul class="space-y-3">
-                        <li class="flex items-center">
+                        <li class="flex items-center text-sm">
                             <i class="fas fa-check text-accent mr-3"></i>
                             <span>Pose professionnelle</span>
                         </li>
-                        <li class="flex items-center">
+                        <li class="flex items-center text-sm">
                             <i class="fas fa-check text-accent mr-3"></i>
-                            <span>Réglage minutieux</span>
+                            <span>Ajustements précis</span>
                         </li>
-                        <li class="flex items-center">
+                        <li class="flex items-center text-sm">
                             <i class="fas fa-check text-accent mr-3"></i>
-                            <span>Conseils d'entretien</span>
+                            <span>Guide d'entretien</span>
                         </li>
                     </ul>
                 </div>
             </div>
-            
-            <div class="text-center mt-16">
-                <a href="#contact" class="px-8 py-4 bg-white text-gray-900 rounded-full font-medium hover:bg-gray-100 transition inline-flex items-center">
-                    <i class="fas fa-calendar mr-3"></i>
-                    Prendre rendez-vous avec NGS
-                </a>
-            </div>
         </div>
     </section>
 
-    <!-- Boutiques -->
-    <section id="boutiques" class="py-20 bg-white dark:bg-gray-900">
+    <!-- Boutiques Premium -->
+    <section id="boutiques" class="py-24 bg-white dark:bg-gray-900">
         <div class="max-w-7xl mx-auto px-6">
-            <div class="flex flex-col lg:flex-row items-center justify-between mb-16">
-                <div class="lg:w-1/2 mb-10 lg:mb-0">
-                    <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6 dark:text-white">
-                        Nos <span class="gradient-text">espaces NGS</span>
+            <div class="flex flex-col lg:flex-row items-center justify-between mb-20">
+                <div class="lg:w-1/2 mb-12 lg:mb-0">
+                    <h2 class="text-5xl lg:text-6xl font-display font-bold mb-8 dark:text-white">
+                        Nos <span class="gradient-text">Espaces</span>
                     </h2>
-                    <p class="text-gray-600 dark:text-gray-300 text-lg">
-                        Visitez nos boutiques-ateliers pour découvrir nos matériaux et rencontrer nos experts.
+                    <p class="text-gray-600 dark:text-gray-300 text-xl leading-relaxed">
+                        Découvrez nos boutiques-ateliers où nos experts vous accueillent pour vous conseiller et vous présenter nos collections.
                     </p>
+                    
+                    <!-- Stats -->
+                    <div class="grid grid-cols-2 gap-6 mt-12">
+                        <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
+                            <div class="text-4xl font-bold gradient-text mb-2">3</div>
+                            <div class="font-medium dark:text-gray-300 uppercase tracking-wide">Boutiques en RDC</div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
+                            <div class="text-4xl font-bold gradient-text mb-2">28</div>
+                            <div class="font-medium dark:text-gray-300 uppercase tracking-wide">Designers experts</div>
+                        </div>
+                    </div>
                 </div>
+                
+                <!-- Carte principale -->
                 <div class="lg:w-1/2 lg:pl-16">
-                    <div class="grid grid-cols-2 gap-6">
-                        <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
-                            <div class="text-3xl font-bold gradient-text mb-2">3</div>
-                            <div class="font-medium dark:text-gray-300">Boutiques en RDC</div>
+                    <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift">
+                        <div class="h-64 overflow-hidden">
+                            <div class="image-loader w-full h-full"></div>
+                            <img src="https://images.unsplash.com/photo-1558618047-3c8c76ca7d13?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1771&q=80" 
+                                 alt="Boutique Butembo NGS" 
+                                 class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                 onload="this.style.opacity=1"
+                                 style="opacity:0">
                         </div>
-                        <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
-                            <div class="text-3xl font-bold gradient-text mb-2">28</div>
-                            <div class="font-medium dark:text-gray-300">Designers experts</div>
+                        <div class="p-8">
+                            <div class="flex justify-between items-start mb-6">
+                                <div>
+                                    <h3 class="font-bold text-2xl mb-2 dark:text-white">Butembo | Rawbank</h3>
+                                    <p class="text-gray-500 dark:text-gray-400">Showroom principal</p>
+                                </div>
+                                <span class="px-4 py-2 gradient-accent text-white rounded-full text-sm font-medium uppercase tracking-wide">Nouveau</span>
+                            </div>
+                            <p class="text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">
+                                Notre boutique principale avec salle d'exposition et atelier visible. Venez découvrir notre savoir-faire.
+                            </p>
+                            <div class="space-y-3">
+                                <div class="flex items-center text-gray-500 dark:text-gray-400">
+                                    <i class="fas fa-map-marker-alt mr-3 text-accent"></i>
+                                    <span>Butembo, rue président de la république, près de la Rawbank</span>
+                                </div>
+                                <div class="flex items-center text-gray-500 dark:text-gray-400">
+                                    <i class="fas fa-clock mr-3 text-accent"></i>
+                                    <span>Lundi au Samedi : 08h00 - 17h30</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
             
-            <!-- Carte des boutiques -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
-                <!-- Boutique Paris -->
-                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift">
-                    <div class="h-64 overflow-hidden">
-                        <img src="https://images.unsplash.com/photo-1558618047-3c8c76ca7d13?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1771&q=80" 
-                             alt="Boutique Paris" 
-                             class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+            <!-- Autres boutiques -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Boutique 2 -->
+                <div class="flex items-center p-8 bg-gray-50 dark:bg-gray-800 rounded-3xl shadow-soft hover:shadow-hover transition-all group">
+                    <div class="w-20 h-20 rounded-2xl gradient-accent flex items-center justify-center mr-6 shadow-lg">
+                        <i class="fas fa-store text-white text-2xl"></i>
                     </div>
-                    <div class="p-8">
-                        <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <h3 class="font-bold text-2xl mb-2 dark:text-white">Butembo | Rawbank</h3>
-                                <p class="text-gray-500 dark:text-gray-400">show room</p>
-                            </div>
-                            <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium">Nouveau</span>
-                        </div>
-                        <p class="text-gray-600 dark:text-gray-300 mb-6">Notre boutique principale avec salle d'exposition et atelier visible.</p>
-                        <div class="flex items-center text-gray-500 dark:text-gray-400 mb-2">
-                            <i class="fas fa-map-marker-alt mr-3"></i>
-                            <span>Butembo rue president de la republique, pres de la Rawbank</span>
-                        </div>
-                        <div class="flex items-center text-gray-500 dark:text-gray-400">
-                            <i class="fas fa-clock mr-3"></i>
-                            <span>Du lundi au samedi, 08h-17h 30</span>
+                    <div>
+                        <h4 class="font-bold text-xl mb-2 dark:text-white group-hover:text-accent transition">Butembo Centre</h4>
+                        <p class="text-gray-600 dark:text-gray-400 mb-3">Rue président de la république, Bâtiment Kibweli</p>
+                        <div class="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-phone-alt mr-2"></i>
+                            <span>+243 XXX XXX XXX</span>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Liste des autres boutiques -->
-                <div class="space-y-6">
-                    <!-- Boutique Lyon -->
-                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                        <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
-                            <i class="fas fa-store text-white text-xl"></i>
-                        </div>
-                        <div>
-                            <h4 class="font-bold text-lg mb-1 dark:text-white">Butembo | Rue president de la republique</h4>
-                            <p class="text-gray-600 dark:text-gray-400 text-sm">Rue president de la republique, Batiment Kibweli </p>
+                <!-- Boutique 3 -->
+                <div class="flex items-center p-8 bg-gray-50 dark:bg-gray-800 rounded-3xl shadow-soft hover:shadow-hover transition-all group">
+                    <div class="w-20 h-20 rounded-2xl gradient-accent flex items-center justify-center mr-6 shadow-lg">
+                        <i class="fas fa-store text-white text-2xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-xl mb-2 dark:text-white group-hover:text-accent transition">Beni | Boulevard Nyamwisi</h4>
+                        <p class="text-gray-600 dark:text-gray-400 mb-3">Bâtiment Mbayahi, près de la Rawbank</p>
+                        <div class="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-phone-alt mr-2"></i>
+                            <span>+243 XXX XXX XXX</span>
                         </div>
                     </div>
-                    
-                    <!-- Boutique Bordeaux -->
-                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                        <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
-                            <i class="fas fa-store text-white text-xl"></i>
-                        </div>
-                        <div>
-                            <h4 class="font-bold text-lg mb-1 dark:text-white">Beni | Boulevard Nyamwisi Batiment Mbayahi </h4>
-                            <p class="text-gray-600 dark:text-gray-400 text-sm">Quartier residentiel , près de la Rawbank</p>
+                </div>
+                
+                <!-- Boutique 4 -->
+                <div class="flex items-center p-8 bg-gray-50 dark:bg-gray-800 rounded-3xl shadow-soft hover:shadow-hover transition-all group">
+                    <div class="w-20 h-20 rounded-2xl gradient-accent flex items-center justify-center mr-6 shadow-lg">
+                        <i class="fas fa-store text-white text-2xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-xl mb-2 dark:text-white group-hover:text-accent transition">Bunia | Rue Ituri</h4>
+                        <p class="text-gray-600 dark:text-gray-400 mb-3">Bâtiment Qualitex, près de l'ancien SOFICOM</p>
+                        <div class="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-phone-alt mr-2"></i>
+                            <span>+243 XXX XXX XXX</span>
                         </div>
                     </div>
-                    
-                    <!-- Boutique Lille -->
-                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                        <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
-                            <i class="fas fa-store text-white text-xl"></i>
-                        </div>
-                        <div>
-                            <h4 class="font-bold text-lg mb-1 dark:text-white">Bunia | Rue Ituri</h4>
-                            <p class="text-gray-600 dark:text-gray-400 text-sm">Rue Ituri, Batiment Qualitex pres de l'ancien SOFICOM </p>
-                        </div>
-                    </div>
-                    
-                    
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Contact -->
-    <section id="contact" class="py-20 bg-gray-900 text-white">
+    <!-- Section Contact Premium - AVEC ICÔNES RÉSEAUX SOCIAUX -->
+    <section id="contact" class="py-24 bg-gradient-to-br from-gray-900 to-gray-950 text-white">
         <div class="max-w-7xl mx-auto px-6">
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                <!-- Formulaire -->
+            <div class="text-center mb-20">
+                <h2 class="text-5xl lg:text-6xl font-display font-bold mb-8">
+                    Restons <span class="gradient-text">Connectés</span>
+                </h2>
+                <p class="text-gray-400 text-xl max-w-3xl mx-auto leading-relaxed">
+                    Contactez-nous via vos canaux préférés. Notre équipe est à votre écoute du lundi au samedi.
+                </p>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-16">
+                <!-- Informations de contact -->
                 <div>
-                    <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6">
-                        Discutons de <span class="gradient-text">votre projet</span>
-                    </h2>
-                    <p class="text-gray-400 mb-10">
-                        Prenez rendez-vous avec l'un de nos designers NGS pour une consultation gratuite à domicile.
+                    <h3 class="text-3xl font-bold mb-10">Nos Coordonnées</h3>
+                    
+                    <!-- Grid des icônes de contact -->
+                    <div class="grid grid-cols-2 gap-6 mb-12">
+                        <!-- Téléphone -->
+                        <a href="tel:+243977421421" class="group">
+                            <div class="social-icon social-phone shadow-lg">
+                                <i class="fas fa-phone-alt text-white text-xl"></i>
+                            </div>
+                            <div class="mt-4">
+                                <h4 class="font-bold text-lg mb-1">Téléphone</h4>
+                                <p class="text-gray-400 group-hover:text-accent transition">+243 977 421 421</p>
+                            </div>
+                        </a>
+                        
+                        <!-- Email -->
+                        <a href="mailto:newgraceservice@gmail.com" class="group">
+                            <div class="social-icon social-email shadow-lg">
+                                <i class="fas fa-envelope text-white text-xl"></i>
+                            </div>
+                            <div class="mt-4">
+                                <h4 class="font-bold text-lg mb-1">Email</h4>
+                                <p class="text-gray-400 group-hover:text-accent transition">newgraceservice@gmail.com</p>
+                            </div>
+                        </a>
+                        
+                        <!-- WhatsApp -->
+                        <a href="https://wa.me/243977421421" target="_blank" class="group">
+                            <div class="social-icon social-whatsapp shadow-lg">
+                                <i class="fab fa-whatsapp text-white text-xl"></i>
+                            </div>
+                            <div class="mt-4">
+                                <h4 class="font-bold text-lg mb-1">WhatsApp</h4>
+                                <p class="text-gray-400 group-hover:text-accent transition">Message direct</p>
+                            </div>
+                        </a>
+                        
+                        <!-- Telegram -->
+                        <a href="https://t.me/newgraceservice" target="_blank" class="group">
+                            <div class="social-icon social-telegram shadow-lg">
+                                <i class="fab fa-telegram text-white text-xl"></i>
+                            </div>
+                            <div class="mt-4">
+                                <h4 class="font-bold text-lg mb-1">Telegram</h4>
+                                <p class="text-gray-400 group-hover:text-accent transition">@newgraceservice</p>
+                            </div>
+                        </a>
+                    </div>
+                    
+                    <!-- Réseaux sociaux -->
+                    <div class="mb-12">
+                        <h4 class="text-xl font-bold mb-6">Suivez-nous</h4>
+                        <div class="flex space-x-4">
+                            <a href="https://facebook.com/newgraceservice" target="_blank" class="social-icon social-facebook">
+                                <i class="fab fa-facebook-f text-white"></i>
+                            </a>
+                            <a href="https://instagram.com/newgraceservice" target="_blank" class="social-icon social-instagram">
+                                <i class="fab fa-instagram text-white"></i>
+                            </a>
+                            <a href="#" class="social-icon bg-gradient-to-br from-red-500 to-pink-600">
+                                <i class="fab fa-tiktok text-white"></i>
+                            </a>
+                            <a href="#" class="social-icon bg-gradient-to-br from-blue-500 to-blue-700">
+                                <i class="fab fa-linkedin-in text-white"></i>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Horaires -->
+                    <div class="bg-gray-800/50 rounded-2xl p-6">
+                        <div class="flex items-center mb-4">
+                            <div class="w-12 h-12 rounded-xl bg-gradient-to-r from-accent to-secondary flex items-center justify-center mr-4">
+                                <i class="fas fa-clock text-white"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-lg">Horaires d'ouverture</h4>
+                                <p class="text-gray-400">Lundi au Samedi : 8h00 - 17h00</p>
+                            </div>
+                        </div>
+                        <p class="text-gray-400 text-sm">Sur rendez-vous le dimanche pour les projets urgents.</p>
+                    </div>
+                </div>
+                
+                <!-- Carte de localisation -->
+                <div class="lg:pl-8">
+                    <div class="bg-gray-800/50 rounded-3xl p-8 h-full">
+                        <h3 class="text-3xl font-bold mb-8">Nos Boutiques</h3>
+                        
+                        <!-- Mini-cartes des boutiques -->
+                        <div class="space-y-6">
+                            <!-- Boutique 1 -->
+                            <div class="flex items-center p-6 bg-gray-800/30 rounded-2xl hover:bg-gray-800/50 transition group">
+                                <div class="w-4 h-4 rounded-full bg-accent mr-4"></div>
+                                <div class="flex-1">
+                                    <h4 class="font-bold text-lg mb-1 group-hover:text-accent transition">Butembo | Rawbank</h4>
+                                    <p class="text-gray-400 text-sm">Rue président de la république</p>
+                                </div>
+                                <i class="fas fa-chevron-right text-gray-500 group-hover:text-accent transition"></i>
+                            </div>
+                            
+                            <!-- Boutique 2 -->
+                            <div class="flex items-center p-6 bg-gray-800/30 rounded-2xl hover:bg-gray-800/50 transition group">
+                                <div class="w-4 h-4 rounded-full bg-secondary mr-4"></div>
+                                <div class="flex-1">
+                                    <h4 class="font-bold text-lg mb-1 group-hover:text-secondary transition">Butembo Centre</h4>
+                                    <p class="text-gray-400 text-sm">Bâtiment Kibweli</p>
+                                </div>
+                                <i class="fas fa-chevron-right text-gray-500 group-hover:text-secondary transition"></i>
+                            </div>
+                            
+                            <!-- Boutique 3 -->
+                            <div class="flex items-center p-6 bg-gray-800/30 rounded-2xl hover:bg-gray-800/50 transition group">
+                                <div class="w-4 h-4 rounded-full bg-purple-500 mr-4"></div>
+                                <div class="flex-1">
+                                    <h4 class="font-bold text-lg mb-1 group-hover:text-purple-400 transition">Beni | Boulevard Nyamwisi</h4>
+                                    <p class="text-gray-400 text-sm">Bâtiment Mbayahi</p>
+                                </div>
+                                <i class="fas fa-chevron-right text-gray-500 group-hover:text-purple-400 transition"></i>
+                            </div>
+                            
+                            <!-- Boutique 4 -->
+                            <div class="flex items-center p-6 bg-gray-800/30 rounded-2xl hover:bg-gray-800/50 transition group">
+                                <div class="w-4 h-4 rounded-full bg-teal-400 mr-4"></div>
+                                <div class="flex-1">
+                                    <h4 class="font-bold text-lg mb-1 group-hover:text-teal-400 transition">Bunia | Rue Ituri</h4>
+                                    <p class="text-gray-400 text-sm">Bâtiment Qualitex</p>
+                                </div>
+                                <i class="fas fa-chevron-right text-gray-500 group-hover:text-teal-400 transition"></i>
+                            </div>
+                        </div>
+                        
+                        <!-- Call to action -->
+                        <div class="mt-8 p-6 gradient-accent rounded-2xl text-center">
+                            <h4 class="font-bold text-xl mb-2">Besoin d'un conseil personnalisé ?</h4>
+                            <p class="mb-4">Nos designers sont disponibles pour une consultation gratuite.</p>
+                            <a href="tel:+243977421421" class="inline-flex items-center px-6 py-3 bg-white text-gray-900 rounded-full font-bold hover:bg-gray-100 transition">
+                                <i class="fas fa-phone mr-3"></i>
+                                Appelez-nous maintenant
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer Premium -->
+    <footer class="py-16 bg-gray-950 text-white">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex flex-col lg:flex-row justify-between items-center mb-12">
+                <!-- Logo -->
+                <div class="mb-8 lg:mb-0">
+                    <div class="flex items-center space-x-3 mb-6">
+                        <div class="w-12 h-12 rounded-full gradient-accent flex items-center justify-center">
+                            <span class="font-bold text-white text-xl">NGS</span>
+                        </div>
+                        <div>
+                            <h2 class="font-display text-2xl font-bold">New Grace Service</h2>
+                            <p class="text-gray-400 text-sm">Excellence depuis Bbo</p>
+                        </div>
+                    </div>
+                    <p class="text-gray-400 max-w-md">
+                        Créateurs d'ambiances lumineuses et élégantes à travers des rideaux sur mesure d'exception.
+                    </p>
+                </div>
+                
+                <!-- Liens rapides -->
+                <div class="flex flex-wrap gap-12 mb-8 lg:mb-0">
+                    <div>
+                        <h3 class="font-bold text-lg mb-4">Entreprise</h3>
+                        <ul class="space-y-2">
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">À propos</a></li>
+                            <li><a href="#services" class="text-gray-400 hover:text-white transition">Services</a></li>
+                            <li><a href="#boutiques" class="text-gray-400 hover:text-white transition">Boutiques</a></li>
+                        </ul>
+                    </div>
+                    
+                    <div>
+                        <h3 class="font-bold text-lg mb-4">Services</h3>
+                        <ul class="space-y-2">
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">Conception sur mesure</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">Installation</a></li>
+                            <li><a href="#" class="text-gray-400 hover:text-white transition">Entretien</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Séparateur -->
+            <div class="border-t border-gray-800 pt-8">
+                <div class="flex flex-col md:flex-row justify-between items-center">
+                    <p class="text-gray-500 text-sm mb-4 md:mb-0">
+                        © 2024 New Grace Service. Tous droits réservés.
                     </p>
                     
-                    <form class="space-y-6">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <input type="text" 
-                                       placeholder="Prénom" 
-                                       class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent">
-                            </div>
-                            <div>
-                                <input type="text" 
-                                       placeholder="Nom" 
-                                       class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent">
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <input type="email" 
-                                   placeholder="Email" 
-                                   class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent">
-                        </div>
-                        
-                        <div>
-                            <input type="tel" 
-                                   placeholder="Téléphone" 
-                                   class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent">
-                        </div>
-                        
-                        <div>
-                            <textarea rows="5" 
-                                      placeholder="Décrivez votre projet..." 
-                                      class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
-                        </div>
-                        
-                        <button type="submit" class="px-8 py-4 gradient-accent text-white rounded-xl font-medium hover:opacity-90 transition w-full">
-                            Envoyer ma demande
-                        </button>
-                    </form>
+                    <div class="flex space-x-6">
+                        <a href="#" class="text-gray-500 hover:text-white transition">
+                            <i class="fab fa-facebook-f"></i>
+                        </a>
+                        <a href="#" class="text-gray-500 hover:text-white transition">
+                            <i class="fab fa-instagram"></i>
+                        </a>
+                        <a href="#" class="text-gray-500 hover:text-white transition">
+                            <i class="fab fa-tiktok"></i>
+                        </a>
+                        <a href="#" class="text-gray-500 hover:text-white transition">
+                            <i class="fab fa-whatsapp"></i>
+                        </a>
+                    </div>
                 </div>
-                
-                <!-- Infos contact -->
-                <div class="lg:pl-12">
-                    <div class="mb-12">
-                        <h3 class="text-2xl font-bold mb-6">Nos coordonnées</h3>
-                        <div class="space-y-6">
-                            <div class="flex items-start">
-                                <div class="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center mr-4">
-                                    <i class="fas fa-phone text-accent"></i>
-                                </div>
-                                <div>
-                                    <h4 class="font-bold mb-1">Téléphone</h4>
-                                    <p class="text-gray-400">+243 977 421 421</p>
-                                </div>
-                            </div>
-                            
-                            <div class="flex items-start">
-                                <div class="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center mr-4">
-                                    <i class="fas fa-envelope text-accent"></i>
-                                </div>
-                                <div>
-                                    <h4 class="font-bold mb-1">Email</h4>
-                                    <p class="text-gray-400">newgraceservice@gmail.com</p>
-                                </div>
-                            </div>
-                            
-                            <div class="flex items-start">
-                                <div class="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center mr-4">
-                                    <i class="fas fa-clock text-accent"></i>
-                                </div>
-                                <div>
-                                    <h4 class="font-bold mb-1">Horaires</h4>
-                                    <p class="text-gray-400">Lundi au Samedi : 8h 00 -17h 00</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>                    
-                    
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="py-12 bg-gray-950 text-white">
-        <div class="max-w-7xl mx-auto px-6">
-            <div class="flex flex-col md:flex-row justify-between items-center">
-                
-                
-                <div class="flex space-x-6">
-                    <a href="#" class="text-gray-400 hover:text-white transition">
-                        <i class="fab fa-instagram text-xl"></i>
-                    </a>
-                    <a href="#" class="text-gray-400 hover:text-white transition">
-                        <i class="fab fa-pinterest text-xl"></i>
-                    </a>
-                    <a href="#" class="text-gray-400 hover:text-white transition">
-                        <i class="fab fa-linkedin text-xl"></i>
-                    </a>
-                </div>
-            </div>
-            
-            <div class="border-t border-gray-800 mt-12 pt-8 text-center text-gray-500 text-sm">
-                <p>Fabrication française | Matériaux éco-responsables | Garantie 5 ans</p>
-                <p class="mt-2"> Nouveau nom : <span class="text-accent">New Grace Service (NGS)</span></p>
             </div>
         </div>
     </footer>
 
-    <!-- Scripts -->
+    <!-- Scripts améliorés -->
     <script>
         // Menu mobile
         document.getElementById('menu-toggle').addEventListener('click', function() {
             const mobileMenu = document.getElementById('mobile-menu');
             mobileMenu.classList.toggle('hidden');
-        });
-
-        // Fermer le menu mobile en cliquant sur un lien
-        const mobileLinks = document.querySelectorAll('#mobile-menu a');
-        mobileLinks.forEach(link => {
-            link.addEventListener('click', function() {
-                document.getElementById('mobile-menu').classList.add('hidden');
-            });
-        });
-
-        // Animation au scroll
-        const observerOptions = {
-            threshold: 0.1,
-            rootMargin: '0px 0px -50px 0px'
-        };
-
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('animate-fade-in');
-                }
-            });
-        }, observerOptions);
-
-        // Observer les éléments à animer
-        document.querySelectorAll('.hover-lift').forEach((el, index) => {
-            el.style.animationDelay = `${index * 0.1}s`;
-            observer.observe(el);
+            this.querySelector('i').classList.toggle('fa-bars');
+            this.querySelector('i').classList.toggle('fa-times');
         });
 
         // Gestion du mode sombre
@@ -819,12 +1107,12 @@
         const themeToggleMobile = document.getElementById('theme-toggle-mobile');
         const body = document.body;
 
-        // Vérifier le thème sauvegardé ou la préférence système
-        const savedTheme = localStorage.getItem('theme') || 'light';
+        // Vérifier le thème sauvegardé
+        const savedTheme = localStorage.getItem('ngs-theme');
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         
         // Appliquer le thème initial
-        if (savedTheme === 'dark' || (savedTheme === 'system' && prefersDark)) {
+        if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
             body.classList.add('dark-mode');
         }
 
@@ -832,12 +1120,90 @@
         function toggleTheme() {
             body.classList.toggle('dark-mode');
             const isDarkMode = body.classList.contains('dark-mode');
-            localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+            localStorage.setItem('ngs-theme', isDarkMode ? 'dark' : 'light');
+            
+            // Animation des icônes
+            const sunIcons = document.querySelectorAll('.fa-sun');
+            const moonIcons = document.querySelectorAll('.fa-moon');
+            
+            if (isDarkMode) {
+                sunIcons.forEach(icon => icon.style.opacity = '0.5');
+                moonIcons.forEach(icon => icon.style.opacity = '1');
+            } else {
+                sunIcons.forEach(icon => icon.style.opacity = '1');
+                moonIcons.forEach(icon => icon.style.opacity = '0.5');
+            }
         }
 
         // Ajouter les événements
         themeToggle.addEventListener('click', toggleTheme);
         themeToggleMobile.addEventListener('click', toggleTheme);
+
+        // Animation au scroll
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -100px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('animate-fade-in');
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, observerOptions);
+
+        // Observer les éléments à animer
+        document.querySelectorAll('.hover-lift, .card-glass, .stat-card').forEach((el, index) => {
+            el.style.animationDelay = `${index * 0.1}s`;
+            observer.observe(el);
+        });
+
+        // Smooth scroll pour les ancres
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                if (targetId === '#') return;
+                
+                const targetElement = document.querySelector(targetId);
+                if (targetElement) {
+                    window.scrollTo({
+                        top: targetElement.offsetTop - 80,
+                        behavior: 'smooth'
+                    });
+                    
+                    // Fermer le menu mobile si ouvert
+                    document.getElementById('mobile-menu').classList.add('hidden');
+                }
+            });
+        });
+
+        // Préchargement d'images amélioré
+        const images = document.querySelectorAll('img');
+        images.forEach(img => {
+            const loader = img.parentElement.querySelector('.image-loader');
+            if (loader) {
+                img.addEventListener('load', () => {
+                    loader.style.display = 'none';
+                });
+            }
+        });
+
+        // Effet de parallaxe simple
+        window.addEventListener('scroll', () => {
+            const scrolled = window.pageYOffset;
+            const parallaxElements = document.querySelectorAll('.float-animation');
+            
+            parallaxElements.forEach(element => {
+                const speed = element.dataset.speed || 0.5;
+                element.style.transform = `translateY(${scrolled * speed}px)`;
+            });
+        });
+
+        // Initialiser les opacités des icônes de thème
+        toggleTheme(); // Pour mettre à jour les icônes
     </script>
 </body>
 </html>

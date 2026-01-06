@@ -822,7 +822,7 @@ try {
                                                         Voir
                                                     </a>
                                                     
-                                                    <?php if ($commande['etat'] == 'brouillon'): ?>
+                                                    <!-- <?php if ($commande['etat'] == 'brouillon'): ?>
                                                         <button onclick="changerEtat(<?= $commande['id'] ?>, 'payee')"
                                                                 class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700">
                                                             <i class="fas fa-check mr-1"></i>
@@ -834,7 +834,7 @@ try {
                                                             <i class="fas fa-undo mr-1"></i>
                                                             Brouillon
                                                         </button>
-                                                    <?php endif; ?>
+                                                    <?php endif; ?> -->
                                                     
                                                     <button onclick="openDeleteModal(<?= $commande['id'] ?>, '<?= htmlspecialchars(addslashes($commande['numero_facture'])) ?>')"
                                                             class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700">

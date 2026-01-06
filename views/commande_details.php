@@ -530,7 +530,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['enregistrer_paiement_
             INSERT INTO paiements (`date`, `commandes_id`, `montant`, `statut`)
             VALUES (?, ?, ?, '0')
         ");
-        $query->execute([$date_paiement,$commande_id, $montant]);
+        $query->execute([$date_paiement, $commande_id, $montant]);
         
         // Marquer la commande comme payée
         $query = $pdo->prepare("
@@ -609,32 +609,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['annuler_paiement'])) 
     }
 }
 
-// Finaliser la commande (changer l'état en payée)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['finaliser_commande'])) {
-    try {
-        $query = $pdo->prepare("
-            UPDATE commandes 
-            SET etat = 'payee'
-            WHERE id = ? AND boutique_id = ? AND statut = 0
-        ");
-        $query->execute([$commande_id, $boutique_id]);
-
-        $_SESSION['flash_message'] = [
-            'text' => "Commande #{$commande_id} marquée comme payée !",
-            'type' => "success"
-        ];
-
-        header("Location: commande_details.php?id=$commande_id");
-        exit;
-    } catch (PDOException $e) {
-        $_SESSION['flash_message'] = [
-            'text' => "Erreur lors de la finalisation: " . $e->getMessage(),
-            'type' => "error"
-        ];
-        header("Location: commande_details.php?id=$commande_id");
-        exit;
-    }
-}
+// MODIFICATION SUPPRIMÉE : Pas de finalisation manuelle de commande
+// La commande n'est marquée comme payée qu'après un paiement
 
 // Annuler la commande (supprimer tous les produits et remettre en stock)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['annuler_commande'])) {
@@ -1139,12 +1115,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['annuler_commande'])) 
                         </a>
                         
                         <?php if ($commande['etat'] == 'brouillon'): ?>
-                            <form method="POST" action="" class="inline" onsubmit="return confirm('Marquer cette commande comme payée ?');">
-                                <button type="submit" name="finaliser_commande" 
-                                        class="px-4 py-2 gradient-green-btn text-white rounded-lg hover:opacity-90 shadow-md">
-                                    <i class="fas fa-check mr-2"></i>Marquer comme payée
-                                </button>
-                            </form>
+                            <span class="status-badge status-brouillon text-lg">
+                                <i class="fas fa-pencil-alt mr-2"></i>Brouillon
+                            </span>
                         <?php else: ?>
                             <span class="status-badge status-payee text-lg">
                                 <i class="fas fa-check-circle mr-2"></i>Payée
@@ -1486,7 +1459,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['annuler_commande'])) 
                                     </div>
                                 </div>
                                 
-                                <!-- NOUVEAU : Boutons pour paiement et impression -->
+                                <!-- Boutons pour paiement et impression -->
                                 <div class="mt-6 pt-6 border-t border-gray-200 flex justify-between print:hidden">
                                     <div>
                                         <?php if ($commande['etat'] == 'brouillon' && $reste_a_payer > 0): ?>
@@ -1497,10 +1470,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['annuler_commande'])) 
                                         <?php endif; ?>
                                     </div>
                                     <div>
-                                        <button onclick="imprimerFacture()" 
-                                                class="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:opacity-90 shadow-md transition-all">
+                                        <!-- MODIFICATION : Bouton redirigeant vers facture-credit.php -->
+                                        <a href="facture-credit.php?id=<?= $commande_id ?>" 
+                                           class="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:opacity-90 shadow-md transition-all inline-flex items-center">
                                             <i class="fas fa-print mr-2"></i>Imprimer la facture
-                                        </button>
+                                        </a>
                                     </div>
                                 </div>
                             </div>
@@ -1675,14 +1649,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['annuler_commande'])) 
                             <i class="fas fa-arrow-left mr-2"></i>Retour aux ventes
                         </a>
                         
-                        <?php if ($commande['etat'] == 'brouillon'): ?>
-                            <form method="POST" action="" onsubmit="return confirm('Finaliser cette commande ?');" class="inline">
-                                <button type="submit" name="finaliser_commande" 
-                                        class="px-4 py-2 gradient-green-btn text-white rounded-lg hover:opacity-90 shadow-md">
-                                    <i class="fas fa-check mr-2"></i>Marquer comme payée
-                                </button>
-                            </form>
-                        <?php endif; ?>
+                        <!-- MODIFICATION SUPPRIMÉE : Pas de bouton "Marquer comme payée" -->
                     </div>
                 </div>
             </main>

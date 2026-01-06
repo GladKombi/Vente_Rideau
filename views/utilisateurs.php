@@ -750,7 +750,7 @@ try {
                 </button>
             </div>
             
-            <form id="utilisateurForm" method="POST" action="../models/traitement/utilisateur-post.php">
+            <form id="utilisateurForm" method="POST" action="../models/traitement/user-post.php">
                 <input type="hidden" name="id" id="utilisateurId">
 
                 <div class="space-y-4">

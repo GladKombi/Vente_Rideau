@@ -1,317 +1,16 @@
-<?php
-# Connexion à la base de données
-include '../connexion/connexion.php';
-
-// Vérification de l'authentification BOUTIQUE
-if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'boutique') {
-    header('Location: ../login.php');
-    exit;
-}
-
-// Récupérer l'ID de la boutique connectée
-$boutique_id = $_SESSION['boutique_id'] ?? null;
-if (!$boutique_id) {
-    header('Location: ../login.php');
-    exit;
-}
-
-// Initialisation des variables
-$message = '';
-$message_type = '';
-$boutique_info = null;
-
-// --- GESTION DES MESSAGES VIA SESSIONS ---
-if (isset($_SESSION['flash_message'])) {
-    $message = $_SESSION['flash_message']['text'];
-    $message_type = $_SESSION['flash_message']['type'];
-    unset($_SESSION['flash_message']);
-}
-
-// Récupérer les informations de la boutique
-try {
-    $queryBoutique = $pdo->prepare("SELECT id, nom, email, date_creation, actif FROM boutiques WHERE id = ? AND statut = 0");
-    $queryBoutique->execute([$boutique_id]);
-    $boutique_info = $queryBoutique->fetch(PDO::FETCH_ASSOC);
-
-    if (!$boutique_info) {
-        $_SESSION['flash_message'] = [
-            'text' => "Boutique introuvable ou supprimée",
-            'type' => "error"
-        ];
-        header('Location: ../login.php');
-        exit;
-    }
-} catch (PDOException $e) {
-    $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des informations de la boutique : " . $e->getMessage(),
-        'type' => "error"
-    ];
-    header('Location: ../login.php');
-    exit;
-}
-
-// Récupérer les dates de filtrage pour chaque type de rapport
-$periode = $_GET['periode'] ?? 'mois'; // mois, semaine, jour, personnalise
-
-// Dates par défaut pour STOCKS (pas de filtrage par date)
-$date_debut_stocks = date('Y-m-01');
-$date_fin_stocks = date('Y-m-t');
-
-// Dates par défaut pour VENTES
-$date_debut_ventes = $_GET['date_debut_ventes'] ?? date('Y-m-01');
-$date_fin_ventes = $_GET['date_fin_ventes'] ?? date('Y-m-t');
-
-// Dates par défaut pour CAISSE
-$date_debut_caisse = $_GET['date_debut_caisse'] ?? date('Y-m-01');
-$date_fin_caisse = $_GET['date_fin_caisse'] ?? date('Y-m-t');
-
-// Ajuster les dates selon la période pour chaque type
-if ($periode === 'semaine') {
-    $date_debut_ventes = date('Y-m-d', strtotime('monday this week'));
-    $date_fin_ventes = date('Y-m-d', strtotime('sunday this week'));
-    $date_debut_caisse = date('Y-m-d', strtotime('monday this week'));
-    $date_fin_caisse = date('Y-m-d', strtotime('sunday this week'));
-} elseif ($periode === 'jour') {
-    $date_debut_ventes = date('Y-m-d');
-    $date_fin_ventes = date('Y-m-d');
-    $date_debut_caisse = date('Y-m-d');
-    $date_fin_caisse = date('Y-m-d');
-} elseif ($periode === 'personnalise') {
-    // Les dates personnalisées sont déjà définies par les paramètres GET
-}
-
-// Initialiser les tableaux de données
-$rapport_stocks = [];
-$rapport_ventes = [];
-$rapport_mouvements = [];
-$stats_generales = [];
-
-try {
-    // --- RAPPORTS STOCKS ---
-    // 1. Stocks par produit (pas de filtrage par date)
-    $queryStocks = $pdo->prepare("
-        SELECT 
-            p.matricule,
-            p.designation,
-            p.umProduit,
-            SUM(s.quantite) as quantite_totale,
-            AVG(s.prix) as prix_moyen,
-            MIN(s.prix) as prix_min,
-            MAX(s.prix) as prix_max,
-            SUM(s.quantite * s.prix) as valeur_totale,
-            COUNT(s.id) as nombre_mouvements
-        FROM stock s
-        JOIN produits p ON s.produit_matricule = p.matricule
-        WHERE s.boutique_id = ?
-          AND s.statut = 0
-          AND s.quantite > 0
-        GROUP BY p.matricule, p.designation, p.umProduit
-        ORDER BY valeur_totale DESC
-    ");
-    $queryStocks->execute([$boutique_id]);
-    $rapport_stocks = $queryStocks->fetchAll(PDO::FETCH_ASSOC);
-
-    // 2. Alertes de stock faible (pas de filtrage par date)
-    $queryAlertes = $pdo->prepare("
-        SELECT 
-            p.designation,
-            s.quantite,
-            s.seuil_alerte_stock,
-            s.date_creation
-        FROM stock s
-        JOIN produits p ON s.produit_matricule = p.matricule
-        WHERE s.boutique_id = ?
-          AND s.statut = 0
-          AND s.quantite <= s.seuil_alerte_stock
-          AND s.quantite > 0
-        ORDER BY s.quantite ASC
-    ");
-    $queryAlertes->execute([$boutique_id]);
-    $alertes_stock = $queryAlertes->fetchAll(PDO::FETCH_ASSOC);
-
-    // --- RAPPORTS VENTES ---
-    // NOTE: On va utiliser la date du paiement si disponible, sinon une date fictive
-    // 1. Ventes par période - Jointure avec paiements pour avoir la date
-    $queryVentes = $pdo->prepare("
-        SELECT 
-            DATE(COALESCE(p.date, NOW())) as date_vente,
-            COUNT(DISTINCT cp.commande_id) as nombre_commandes,
-            SUM(cp.quantite) as quantite_vendue,
-            SUM(cp.quantite * cp.prix_unitaire) as chiffre_affaires,
-            AVG(cp.quantite * cp.prix_unitaire) as panier_moyen
-        FROM commande_produits cp
-        LEFT JOIN paiements p ON cp.commande_id = p.commandes_id
-        WHERE cp.statut = 0
-          AND DATE(COALESCE(p.date, NOW())) BETWEEN ? AND ?
-        GROUP BY DATE(COALESCE(p.date, NOW()))
-        ORDER BY date_vente DESC
-        LIMIT 30
-    ");
-    $queryVentes->execute([$date_debut_ventes, $date_fin_ventes]);
-    $rapport_ventes = $queryVentes->fetchAll(PDO::FETCH_ASSOC);
-
-    // 2. Produits les plus vendus
-    $queryTopProduits = $pdo->prepare("
-        SELECT 
-            p.designation,
-            p.umProduit,
-            SUM(cp.quantite) as quantite_vendue,
-            SUM(cp.quantite * cp.prix_unitaire) as chiffre_affaires_produit,
-            COUNT(DISTINCT cp.commande_id) as nombre_commandes
-        FROM commande_produits cp
-        JOIN stock s ON cp.stock_id = s.id
-        JOIN produits p ON s.produit_matricule = p.matricule
-        LEFT JOIN paiements pa ON cp.commande_id = pa.commandes_id
-        WHERE s.boutique_id = ?
-          AND cp.statut = 0
-          AND DATE(COALESCE(pa.date, NOW())) BETWEEN ? AND ?
-        GROUP BY p.designation, p.umProduit
-        ORDER BY quantite_vendue DESC
-        LIMIT 10
-    ");
-    $queryTopProduits->execute([$boutique_id, $date_debut_ventes, $date_fin_ventes]);
-    $top_produits = $queryTopProduits->fetchAll(PDO::FETCH_ASSOC);
-
-    // --- RAPPORTS MOUVEMENTS DE CAISSE ---
-    // 1. Mouvements par type
-    $queryMouvements = $pdo->prepare("
-        SELECT 
-            DATE(mc.date_mouvement) as date_mouvement,
-            mc.type_mouvement,
-            SUM(mc.montant) as montant_total,
-            COUNT(mc.id) as nombre_operations
-        FROM mouvement_caisse mc
-        WHERE mc.id_boutique = ?
-          AND DATE(mc.date_mouvement) BETWEEN ? AND ?
-          AND mc.statut = 0
-        GROUP BY DATE(mc.date_mouvement), mc.type_mouvement
-        ORDER BY date_mouvement DESC
-        LIMIT 30
-    ");
-    $queryMouvements->execute([$boutique_id, $date_debut_caisse, $date_fin_caisse]);
-    $rapport_mouvements = $queryMouvements->fetchAll(PDO::FETCH_ASSOC);
-
-    // 2. Balance de caisse
-    $queryBalance = $pdo->prepare("
-        SELECT 
-            type_mouvement,
-            SUM(montant) as montant_total,
-            COUNT(id) as nombre_operations
-        FROM mouvement_caisse
-        WHERE id_boutique = ?
-          AND DATE(date_mouvement) BETWEEN ? AND ?
-          AND statut = 0
-        GROUP BY type_mouvement
-    ");
-    $queryBalance->execute([$boutique_id, $date_debut_caisse, $date_fin_caisse]);
-    $balance_caisse = $queryBalance->fetchAll(PDO::FETCH_ASSOC);
-
-    // --- STATISTIQUES GÉNÉRALES ---
-    // 1. Valeur totale du stock (pas de filtrage par date)
-    $queryValeurStock = $pdo->prepare("
-        SELECT SUM(quantite * prix) as valeur_stock
-        FROM stock
-        WHERE boutique_id = ?
-          AND statut = 0
-          AND quantite > 0
-    ");
-    $queryValeurStock->execute([$boutique_id]);
-    $valeur_stock = $queryValeurStock->fetchColumn() ?? 0;
-
-    // 2. Chiffre d'affaires période
-    $queryCA = $pdo->prepare("
-        SELECT SUM(cp.quantite * cp.prix_unitaire) as chiffre_affaires
-        FROM commande_produits cp
-        JOIN stock s ON cp.stock_id = s.id
-        LEFT JOIN paiements pa ON cp.commande_id = pa.commandes_id
-        WHERE s.boutique_id = ?
-          AND cp.statut = 0
-          AND DATE(COALESCE(pa.date, NOW())) BETWEEN ? AND ?
-    ");
-    $queryCA->execute([$boutique_id, $date_debut_ventes, $date_fin_ventes]);
-    $chiffre_affaires = $queryCA->fetchColumn() ?? 0;
-
-    // 3. Total entrées/sorties caisse
-    $queryCaisse = $pdo->prepare("
-        SELECT 
-            type_mouvement,
-            SUM(montant) as total
-        FROM mouvement_caisse
-        WHERE id_boutique = ?
-          AND DATE(date_mouvement) BETWEEN ? AND ?
-          AND statut = 0
-        GROUP BY type_mouvement
-    ");
-    $queryCaisse->execute([$boutique_id, $date_debut_caisse, $date_fin_caisse]);
-    $totaux_caisse = [];
-    while ($row = $queryCaisse->fetch(PDO::FETCH_ASSOC)) {
-        $totaux_caisse[$row['type_mouvement']] = $row['total'];
-    }
-
-    $total_entrees = $totaux_caisse['entrée'] ?? 0;
-    $total_sorties = $totaux_caisse['sortie'] ?? 0;
-    $solde_caisse = $total_entrees - $total_sorties;
-
-    // 4. Nombre de produits différents (pas de filtrage par date)
-    $queryNbProduits = $pdo->prepare("
-        SELECT COUNT(DISTINCT produit_matricule) as nb_produits
-        FROM stock
-        WHERE boutique_id = ?
-          AND statut = 0
-          AND quantite > 0
-    ");
-    $queryNbProduits->execute([$boutique_id]);
-    $nb_produits = $queryNbProduits->fetchColumn() ?? 0;
-
-    // 5. Quantité totale en stock (pas de filtrage par date)
-    $queryQteStock = $pdo->prepare("
-        SELECT SUM(quantite) as quantite_totale
-        FROM stock
-        WHERE boutique_id = ?
-          AND statut = 0
-          AND quantite > 0
-    ");
-    $queryQteStock->execute([$boutique_id]);
-    $quantite_totale = $queryQteStock->fetchColumn() ?? 0;
-
-    // Statistiques par unité (pas de filtrage par date)
-    $queryStatsUnite = $pdo->prepare("
-        SELECT 
-            p.umProduit,
-            COUNT(DISTINCT s.produit_matricule) as nombre_produits,
-            SUM(s.quantite) as quantite_totale,
-            SUM(s.quantite * s.prix) as valeur_totale
-        FROM stock s
-        JOIN produits p ON s.produit_matricule = p.matricule
-        WHERE s.boutique_id = ?
-          AND s.statut = 0
-          AND s.quantite > 0
-        GROUP BY p.umProduit
-    ");
-    $queryStatsUnite->execute([$boutique_id]);
-    $stats_unite = $queryStatsUnite->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des rapports: " . $e->getMessage(),
-        'type' => "error"
-    ];
-}
-?>
-
 <!DOCTYPE html>
-<html lang="fr" class="h-full">
-
+<html lang="fr" class="scroll-smooth">
 <head>
-    <meta charset="utf-8">
-    <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <title>Rapports - <?= htmlspecialchars($boutique_info['nom']) ?> - NGS (New Grace Service)</title>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NGS | New Grace Service - Rideaux sur mesure d'exception</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
     <style>
         :root {
             --primary: #0A2540;
@@ -320,1007 +19,836 @@ try {
             --light: #F8FAFC;
             --dark: #1E293B;
         }
-
+        
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #F8FAFC;
+            background-color: #FFFFFF;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
-
+        
+        body.dark-mode {
+            background-color: #0F172A;
+            color: #E2E8F0;
+        }
+        
         .font-display {
             font-family: 'Outfit', sans-serif;
         }
-
+        
         .gradient-bg {
             background: linear-gradient(135deg, #0A2540 0%, #1E3A5F 100%);
         }
-
+        
+        .dark-mode .gradient-bg {
+            background: linear-gradient(135deg, #1E293B 0%, #334155 100%);
+        }
+        
         .gradient-accent {
             background: linear-gradient(90deg, #7B61FF 0%, #00D4AA 100%);
         }
-
-        .gradient-blue-btn {
-            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%);
-            color: white;
-            transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+        
+        .gradient-text {
+            background: linear-gradient(90deg, #7B61FF 0%, #00D4AA 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
-
-        .gradient-blue-btn:hover {
-            opacity: 0.9;
-            transform: translateY(-2px);
+        
+        .card-glass {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
-
+        
         .shadow-soft {
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
         }
-
-        .hover-lift {
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        
+        .dark-mode .shadow-soft {
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
         }
-
-        .hover-lift:hover {
-            transform: translateY(-5px);
+        
+        .shadow-hover {
+            transition: box-shadow 0.3s ease;
+        }
+        
+        .shadow-hover:hover {
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
         }
-
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.show {
-            display: flex;
-        }
-
-        .modal-content {
-            background-color: white;
-            border-radius: 12px;
+        
+        .dark-mode .shadow-hover:hover {
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
         }
-
-        .slide-down {
-            animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-20px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .status-active {
-            background-color: #D1FAE5;
-            color: #065F46;
-        }
-
-        .status-inactive {
-            background-color: #FEE2E2;
-            color: #991B1B;
-        }
-
-        .sidebar {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        .sidebar-header,
-        .sidebar-profile,
-        .sidebar-footer {
-            flex-shrink: 0;
-        }
-
-        .sidebar-nav {
-            flex: 1;
-            overflow-y: auto;
-            overflow-x: hidden;
-            min-height: 0;
-        }
-
-        .nav-link {
-            position: relative;
-            transition: all 0.3s ease;
-        }
-
-        .nav-link:hover {
-            padding-left: 1.25rem;
-            background: rgba(255, 255, 255, 0.08);
-        }
-
-        .nav-link.active {
-            background: rgba(255, 255, 255, 0.15);
-        }
-
-        .nav-link.active::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 4px;
-            height: 60%;
-            background: var(--accent);
-            border-radius: 0 4px 4px 0;
-        }
-
-        .main-content {
-            height: 100vh;
-            overflow-y: auto;
-        }
-
-        .mobile-menu-btn {
+        
+        .hover-lift {
             transition: transform 0.3s ease;
         }
-
-        .mobile-menu-btn.active {
-            transform: rotate(90deg);
+        
+        .hover-lift:hover {
+            transform: translateY(-8px);
         }
-
-        .stats-card {
-            transition: all 0.3s ease;
+        
+        .animate-fade-in {
+            animation: fadeIn 0.8s ease-out;
         }
-
-        .stats-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-
-        .badge-unite {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 500;
+        
+        .grid-pattern {
+            background-image: 
+                linear-gradient(rgba(10, 37, 64, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(10, 37, 64, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
         }
-
-        .badge-metres {
-            background-color: #E0F2FE;
-            color: #0369A1;
-            border: 1px solid #BAE6FD;
+        
+        .dark-mode .grid-pattern {
+            background-image: 
+                linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
         }
-
-        .badge-pieces {
-            background-color: #DCFCE7;
-            color: #166534;
-            border: 1px solid #BBF7D0;
+        
+        /* Mode sombre spécifique */
+        .dark-mode .bg-gray-50 {
+            background-color: #1E293B;
         }
-
-        .badge-vente {
-            background-color: #DCFCE7;
-            color: #166534;
+        
+        .dark-mode .bg-white {
+            background-color: #334155;
         }
-
-        .badge-entree {
-            background-color: #D1FAE5;
-            color: #065F46;
+        
+        .dark-mode .text-gray-800 {
+            color: #E2E8F0;
         }
-
-        .badge-sortie {
-            background-color: #FEE2E2;
-            color: #991B1B;
+        
+        .dark-mode .text-gray-600 {
+            color: #94A3B8;
         }
-
-        .tab-button {
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            cursor: pointer;
+        
+        .dark-mode .text-gray-500 {
+            color: #94A3B8;
         }
-
-        .tab-button.active {
-            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%);
-            color: white;
+        
+        .dark-mode .text-gray-900 {
+            color: #F1F5F9;
         }
-
-        .tab-button:not(.active) {
-            background-color: #F3F4F6;
-            color: #6B7280;
+        
+        .dark-mode .border-gray-100 {
+            border-color: #334155;
         }
-
-        .tab-button:not(.active):hover {
-            background-color: #E5E7EB;
+        
+        .dark-mode .bg-gray-800 {
+            background-color: #1E293B;
         }
-
-        .chart-container {
+        
+        .dark-mode .bg-gray-900 {
+            background-color: #0F172A;
+        }
+        
+        .dark-mode .bg-gray-950 {
+            background-color: #0A0F1C;
+        }
+        
+        .dark-mode .border-gray-700 {
+            border-color: #475569;
+        }
+        
+        .dark-mode .border-gray-800 {
+            border-color: #475569;
+        }
+        
+        /* Bouton mode sombre */
+        .theme-toggle {
             position: relative;
-            height: 300px;
-            width: 100%;
+            width: 60px;
+            height: 30px;
+            border-radius: 50px;
+            background: linear-gradient(135deg, #7B61FF 0%, #00D4AA 100%);
+            cursor: pointer;
+            transition: all 0.3s ease;
         }
-
-        .info-box {
-            background-color: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 12px;
+        
+        .theme-toggle::before {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
         }
-
-        .info-box p {
-            margin: 0;
-            font-size: 12px;
-            color: #64748b;
+        
+        .dark-mode .theme-toggle::before {
+            transform: translateX(30px);
         }
-
-        .boutique-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        
+        .theme-toggle i {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+        }
+        
+        .theme-toggle .fa-sun {
+            left: 8px;
             color: white;
         }
-
-        .filter-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        
+        .theme-toggle .fa-moon {
+            right: 8px;
             color: white;
-            border-radius: 12px;
         }
-
-        @media (max-width: 768px) {
-            .modal-content {
-                width: 95%;
-                margin: 10px;
-            }
-
-            .action-buttons {
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-
-            .action-btn {
-                width: 100%;
-                justify-content: center;
-            }
-
-            .nav-link {
-                padding: 0.75rem 1rem;
-            }
-
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .tab-button {
-                padding: 8px 12px;
-                font-size: 14px;
-            }
+        
+        /* Animation pour le logo NGS */
+        @keyframes pulse-grace {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
         }
-
-        .filter-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 12px;
-            margin-bottom: 1.5rem;
-        }
-
-        .filter-title {
-            font-weight: bold;
-            margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-        }
-
-        .filter-title i {
-            margin-right: 0.5rem;
+        
+        .pulse-grace {
+            animation: pulse-grace 2s ease-in-out infinite;
         }
     </style>
 </head>
-
-<body class="font-inter min-h-screen bg-gray-50">
-    <button id="mobileMenuButton" class="mobile-menu-btn md:hidden fixed top-4 left-4 z-50 p-3 text-white bg-gradient-to-r from-blue-600 to-purple-600 rounded-full shadow-lg hover:shadow-xl transition-shadow">
-        <i class="fas fa-bars"></i>
-    </button>
-
-    <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
-
-    <div class="flex h-screen">
-        <aside id="sidebar" class="sidebar w-64 gradient-bg text-white flex flex-col fixed inset-y-0 left-0 transform -translate-x-full md:sticky md:top-0 md:h-full md:translate-x-0 transition-transform duration-300 ease-in-out z-50 md:z-auto">
-            <div class="sidebar-header p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center shadow-lg">
-                        <span class="font-bold text-white text-lg font-display">NGS</span>
+<body class="text-gray-800 bg-white overflow-x-hidden">
+    <!-- Navigation Minimaliste -->
+    <header class="fixed w-full z-50 py-4 px-6 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md">
+        <div class="max-w-7xl mx-auto">
+            <div class="flex justify-between items-center">
+                <!-- Logo NGS -->
+                <div class="flex items-center space-x-2">
+                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center pulse-grace">
+                        <span class="font-bold text-white text-lg">NGS</span>
                     </div>
                     <div>
-                        <h1 class="font-display text-xl font-bold">NGS</h1>
-                        <p class="text-xs text-gray-300">New Grace Service - Dashboard Boutique</p>
+                        <h1 class="font-display text-xl font-bold text-gray-900 dark:text-white">NGS</h1>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">New Grace Service | RDC</p>
                     </div>
                 </div>
-            </div>
-
-            <div class="sidebar-profile p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 rounded-full bg-blue-500/20 border-2 border-blue-500/30 flex items-center justify-center relative">
-                        <i class="fas fa-store text-blue-500 text-lg"></i>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
+                
+                <!-- Menu Desktop -->
+                <nav class="hidden lg:flex items-center space-x-10">
+                    <a href="#" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Accueil</a>
+                    <a href="#produits" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Collection</a>
+                    <a href="#services" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Services</a>
+                    <a href="#boutiques" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium transition">Boutiques</a>
+                    <a href="#contact" class="px-5 py-2 bg-gray-900 dark:bg-gray-800 text-white rounded-full font-medium hover:bg-gray-800 dark:hover:bg-gray-700 transition">Contact</a>
+                    <a href="login.php" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Login</a>
+                    <!-- Bouton mode sombre -->
+                    <div class="theme-toggle ml-4" id="theme-toggle">
+                        <i class="fas fa-sun"></i>
+                        <i class="fas fa-moon"></i>
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-semibold truncate"><?= htmlspecialchars($boutique_info['nom']) ?></h3>
-                        <p class="text-sm text-gray-300 truncate"><?= htmlspecialchars($boutique_info['email'] ?? '') ?></p>
-                    </div>
-                </div>
-            </div>
-
-            <nav class="sidebar-nav p-4 space-y-1">
-                <a href="dashboard_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-line w-5 text-gray-300"></i>
-                    <span>Tableau de bord</span>
-                </a>
-                <a href="stock_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-warehouse w-5 text-gray-300"></i>
-                    <span>Mes stocks</span>
-                </a>
-                <a href="ventes_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-shopping-cart w-5 text-gray-300"></i>
-                    <span>Ventes</span>
-                </a>
-                <a href="paiements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-money-bill-wave w-5 text-gray-300"></i>
-                    <span>Paiements</span>
-                </a>
-                <a href="mouvements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-exchange-alt w-5 text-gray-300"></i>
-                    <span>Mouvements Caisse</span>
-                </a>
-                <a href="rapports_boutique.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
-                    <i class="fas fa-chart-bar w-5 text-white"></i>
-                    <span>Rapports</span>
-                </a>
-            </nav>
-
-            <div class="sidebar-footer p-4 border-t border-white/10">
-                <a href="../models/logout.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-red-500/10 text-red-300 hover:text-red-200 transition-colors">
-                    <i class="fas fa-sign-out-alt w-5"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </aside>
-
-        <div class="main-content flex-1 overflow-y-auto">
-            <header class="boutique-header p-4 md:p-6 sticky top-0 z-30 shadow-lg">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <div class="flex items-center space-x-3">
-                            <div>
-                                <h1 class="text-xl md:text-2xl font-bold text-white">Rapports - <?= htmlspecialchars($boutique_info['nom']) ?></h1>
-                                <p class="text-gray-200 text-sm md:text-base">New Grace Service - Rapports analytiques de votre boutique</p>
-                            </div>
-                        </div>
-                        
-                        <div class="mt-3 flex flex-wrap items-center gap-3">
-                            <div class="flex items-center space-x-2 text-sm text-gray-200">
-                                <i class="fas fa-envelope"></i>
-                                <span><?= htmlspecialchars($boutique_info['email'] ?? 'Non spécifié') ?></span>
-                            </div>
-                            <div class="flex items-center space-x-2 text-sm text-gray-200">
-                                <i class="fas fa-calendar-alt"></i>
-                                <span>Créée le <?= date('d/m/Y', strtotime($boutique_info['date_creation'])) ?></span>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <span class="status-badge <?= $boutique_info['actif'] ? 'status-active' : 'status-inactive' ?>">
-                                    <i class="fas fa-<?= $boutique_info['actif'] ? 'check-circle' : 'times-circle' ?> mr-1"></i>
-                                    <?= $boutique_info['actif'] ? 'Active' : 'Inactive' ?>
-                                </span>
-                            </div>
-                        </div>
+                </nav>
+                
+                <div class="flex items-center space-x-4 lg:hidden">
+                    <!-- Bouton mode sombre mobile -->
+                    <div class="theme-toggle" id="theme-toggle-mobile">
+                        <i class="fas fa-sun"></i>
+                        <i class="fas fa-moon"></i>
                     </div>
                     
-                    <div class="flex items-center space-x-4">
-                        <button onclick="refreshPage()" 
-                                class="px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
-                            <i class="fas fa-sync-alt"></i>
-                            <span>Actualiser</span>
-                        </button>
-                        <button onclick="exportRapports()" 
-                                class="px-4 py-2 gradient-blue-btn text-white rounded-lg flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
-                            <i class="fas fa-download"></i>
-                            <span>Exporter</span>
-                        </button>
-                    </div>
-                </div>
-            </header>
-
-    <main class="p-4 md:p-6">
-        <?php if ($message): ?>
-            <div class="mb-6 fade-in relative z-10 animate-fade-in">
-                <div class="
-                            <?php if ($message_type === 'success'): ?>bg-green-50 text-green-700 border border-green-200
-                            <?php elseif ($message_type === 'error'): ?>bg-red-50 text-red-700 border border-red-200
-                            <?php elseif ($message_type === 'warning'): ?>bg-yellow-50 text-yellow-700 border border-yellow-200
-                            <?php else: ?>bg-blue-50 text-blue-700 border border-blue-200<?php endif; ?>
-                            rounded-xl p-4 flex items-center justify-between shadow-soft">
-                    <div class="flex items-center space-x-3">
-                        <?php if ($message_type === 'success'): ?>
-                            <i class="fas fa-check-circle text-green-600 text-lg"></i>
-                        <?php elseif ($message_type === 'error'): ?>
-                            <i class="fas fa-exclamation-circle text-red-600 text-lg"></i>
-                        <?php elseif ($message_type === 'warning'): ?>
-                            <i class="fas fa-exclamation-triangle text-yellow-600 text-lg"></i>
-                        <?php else: ?>
-                            <i class="fas fa-info-circle text-blue-600 text-lg"></i>
-                        <?php endif; ?>
-                        <span><?= htmlspecialchars($message) ?></span>
-                    </div>
-                    <button onclick="this.parentElement.parentElement.style.display='none'" class="text-gray-400 hover:text-gray-600 transition-colors">
-                        <i class="fas fa-times text-lg"></i>
+                    <!-- Menu Mobile Toggle -->
+                    <button id="menu-toggle" class="text-gray-700 dark:text-gray-300">
+                        <i class="fas fa-bars text-xl"></i>
                     </button>
                 </div>
             </div>
-        <?php endif; ?>
-
-        <!-- Onglets -->
-        <div class="mb-6 bg-white rounded-2xl shadow-soft p-4 animate-fade-in" style="animation-delay: 0.1s">
-            <div class="flex flex-wrap gap-2">
-                <button class="tab-button active" data-tab="stats">
-                    <i class="fas fa-chart-pie mr-2"></i>Statistiques
-                </button>
-                <button class="tab-button" data-tab="stocks">
-                    <i class="fas fa-warehouse mr-2"></i>Rapport Stocks
-                </button>
-                <button class="tab-button" data-tab="ventes">
-                    <i class="fas fa-shopping-cart mr-2"></i>Rapport Ventes
-                </button>
-                <button class="tab-button" data-tab="caisse">
-                    <i class="fas fa-exchange-alt mr-2"></i>Rapport Caisse
-                </button>
-                <button class="tab-button" data-tab="alertes">
-                    <i class="fas fa-exclamation-triangle mr-2"></i>Alertes
-                </button>
+            
+            <!-- Menu Mobile -->
+            <div id="mobile-menu" class="hidden lg:hidden mt-4 pb-4 border-t border-gray-100 dark:border-gray-800">
+                <div class="flex flex-col space-y-4 pt-4">
+                    <a href="#" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Accueil</a>
+                    <a href="#produits" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Collection</a>
+                    <a href="#services" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Services</a>
+                    <a href="#boutiques" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Boutiques</a>
+                    <a href="#contact" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Contact</a>
+                    <a href="login.php" class="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white font-medium">Login</a>
+                </div>
             </div>
         </div>
+    </header>
 
-        <!-- Contenu des onglets -->
-
-        <!-- Onglet Statistiques -->
-        <div id="tab-stats" class="tab-content active">
-            <!-- Filtres pour les statistiques -->
-            <div class="filter-section p-4 mb-6">
-                <h3 class="filter-title">
-                    <i class="fas fa-filter"></i>Filtres pour les statistiques
-                </h3>
-                <form method="GET" class="space-y-4 md:space-y-0 md:flex md:items-end md:space-x-4">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1">
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Période</label>
-                            <select name="periode" class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white" onchange="this.form.submit()">
-                                <option value="mois" <?= $periode === 'mois' ? 'selected' : '' ?>>Ce mois</option>
-                                <option value="semaine" <?= $periode === 'semaine' ? 'selected' : '' ?>>Cette semaine</option>
-                                <option value="jour" <?= $periode === 'jour' ? 'selected' : '' ?>>Aujourd'hui</option>
-                                <option value="personnalise" <?= $periode === 'personnalise' ? 'selected' : '' ?>>Personnalisé</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Date début ventes</label>
-                            <input type="date" name="date_debut_ventes" value="<?= $date_debut_ventes ?>"
-                                class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white"
-                                <?= $periode !== 'personnalise' ? 'disabled' : '' ?>>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Date fin ventes</label>
-                            <input type="date" name="date_fin_ventes" value="<?= $date_fin_ventes ?>"
-                                class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white"
-                                <?= $periode !== 'personnalise' ? 'disabled' : '' ?>>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Date début caisse</label>
-                            <input type="date" name="date_debut_caisse" value="<?= $date_debut_caisse ?>"
-                                class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white"
-                                <?= $periode !== 'personnalise' ? 'disabled' : '' ?>>
-                        </div>
+    <!-- Hero Section avec vidéo/gradient -->
+    <section class="pt-24 pb-20 gradient-bg text-white overflow-hidden">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex flex-col lg:flex-row items-center">
+                <div class="lg:w-1/2 animate-fade-in">
+                    <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm mb-6">
+                        <span class="text-sm">Nouveau nom, même excellence</span>
+                        <span class="px-2 py-0.5 gradient-accent rounded-full text-xs">NGS</span>
                     </div>
-                    <div class="flex space-x-3">
-                        <button type="submit" class="px-6 py-3 bg-white text-purple-600 rounded-lg font-semibold hover:bg-white/90 transition-colors">
-                            <i class="fas fa-search mr-2"></i>Appliquer
-                        </button>
-                        <a href="rapports_boutique.php" class="px-6 py-3 bg-white/20 text-white rounded-lg font-semibold hover:bg-white/30 transition-colors">
-                            <i class="fas fa-redo mr-2"></i>Réinitialiser
+                    <h1 class="text-5xl lg:text-6xl font-display font-bold mb-6 leading-tight">
+                        <span class="gradient-text">New Grace Service</span><br>
+                        L'art du rideau sur mesure
+                    </h1>
+                    <p class="text-xl text-gray-300 mb-10 max-w-2xl">
+                        Transformez vos intérieurs avec nos créations d'exception. Faites de votre maison un paradis sur terre.
+                    </p>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <a href="#produits" class="px-8 py-4 gradient-accent text-white rounded-full font-medium hover:opacity-90 transition inline-flex items-center justify-center">
+                            Découvrir la collection
+                            <i class="fas fa-arrow-right ml-3"></i>
+                        </a>
+                        <a href="#services" class="px-8 py-4 border-2 border-white/30 text-white rounded-full font-medium hover:bg-white/10 transition text-center">
+                            Prendre rendez-vous
                         </a>
                     </div>
-                </form>
+                    
+                    <!-- Stats -->
+                    <div class="flex flex-wrap gap-10 mt-16">
+                        <div>
+                            <div class="text-3xl font-bold">28+</div>
+                            <div class="text-gray-400">Ans d'expertise</div>
+                        </div>
+                        <div>
+                            <div class="text-3xl font-bold">5</div>
+                            <div class="text-gray-400">Boutiques</div>
+                        </div>
+                        <div>
+                            <div class="text-3xl font-bold">2500+</div>
+                            <div class="text-gray-400">Projets réalisés</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="lg:w-1/2 mt-12 lg:mt-0 relative">
+                    <div class="relative rounded-3xl overflow-hidden shadow-2xl">
+                        <img src="https://images.unsplash.com/photo-1618220179428-22790b461013?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2729&q=80" 
+                             alt="Rideau design moderne" 
+                             class="w-full h-[600px] object-cover">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
+                    </div>
+                    
+                    <!-- Floating card -->
+                    <div class="absolute -bottom-6 -left-6 bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-soft w-64">
+                        <div class="flex items-center mb-4">
+                            <div class="w-12 h-12 rounded-full gradient-accent flex items-center justify-center">
+                                <i class="fas fa-star text-white"></i>
+                            </div>
+                            <div class="ml-4">
+                                <div class="font-bold text-gray-900 dark:text-white">4.9/5</div>
+                                <div class="text-sm text-gray-500 dark:text-gray-400">Avis clients</div>
+                            </div>
+                        </div>
+                        <p class="text-gray-600 dark:text-gray-300 text-sm">"Excellente réalisation, un travail d'une précision remarquable."</p>
+                    </div>
+                </div>
             </div>
+        </div>
+    </section>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 stats-grid">
-                        <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-blue-500 animate-fade-in">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                                    <i class="fas fa-boxes text-blue-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-blue-600">Valeur stock</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($valeur_stock, 2) ?> $</h3>
-                            <p class="text-gray-600"><?= $nb_produits ?> produits en stock</p>
-                        </div>
-
-                        <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-emerald-500 animate-fade-in" style="animation-delay: 0.1s">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
-                                    <i class="fas fa-chart-line text-emerald-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-emerald-600">Chiffre d'affaires</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($chiffre_affaires, 2) ?> $</h3>
-                            <p class="text-gray-600">Période: <?= date('d/m/Y', strtotime($date_debut)) ?> - <?= date('d/m/Y', strtotime($date_fin)) ?></p>
-                        </div>
-
-                        <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-cyan-500 animate-fade-in" style="animation-delay: 0.2s">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center">
-                                    <i class="fas fa-weight-hanging text-cyan-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-cyan-600">Quantité totale</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($quantite_totale, 3) ?></h3>
-                            <p class="text-gray-600">Unités en stock</p>
-                        </div>
-
-                        <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-purple-500 animate-fade-in" style="animation-delay: 0.3s">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                                    <i class="fas fa-money-bill-wave text-purple-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-purple-600">Solde caisse</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($solde_caisse, 2) ?> $</h3>
-                            <p class="text-gray-600">Entrées: <?= number_format($total_entrees, 2) ?> $ | Sorties: <?= number_format($total_sorties, 2) ?> $</p>
+    <!-- Collection Produits -->
+    <section id="produits" class="py-20 bg-gray-50 dark:bg-gray-900">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6 dark:text-white">
+                    Collection <span class="gradient-text">Signature NGS</span>
+                </h2>
+                <p class="text-gray-600 dark:text-gray-300 text-lg max-w-2xl mx-auto">
+                    Des pièces uniques conçues avec des matériaux d'exception, pour des intérieurs d'exception.
+                </p>
+            </div>
+            
+            <!-- Filtres Minimalistes -->
+            <div class="flex flex-wrap justify-center gap-3 mb-12">
+                <button class="px-5 py-2 bg-gray-900 dark:bg-gray-800 text-white rounded-full font-medium">Tout voir</button>
+                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Luxe</button>
+                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Minimaliste</button>
+                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Naturel</button>
+                <button class="px-5 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-full font-medium shadow-soft hover:shadow-hover transition">Sur mesure</button>
+            </div>
+            
+            <!-- Grille Produits Moderne -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <!-- Produit 1 -->
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in">
+                    <div class="h-64 overflow-hidden relative">
+                        <img src="https://images.unsplash.com/photo-1616046229478-9901c5536a45?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1760&q=80" 
+                             alt="Rideaux en lin" 
+                             class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+                        <div class="absolute top-4 right-4">
+                            <span class="px-3 py-1 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded-full text-sm font-medium dark:text-white">Nouveau</span>
                         </div>
                     </div>
-
-                    <!-- Graphiques -->
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 animate-fade-in" style="animation-delay: 0.4s">
-                        <!-- Graphique ventes -->
-                        <div class="bg-white rounded-2xl shadow-soft p-6">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                <i class="fas fa-chart-line text-blue-500 mr-2"></i>
-                                Évolution des ventes
-                            </h3>
-                            <div class="chart-container">
-                                <canvas id="ventesChart"></canvas>
+                    <div class="p-8">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="font-bold text-xl mb-1 dark:text-white">Collection Lin</h3>
+                                <p class="text-gray-500 dark:text-gray-400">Tissu naturel et respirant</p>
                             </div>
+                            <span class="font-bold text-2xl dark:text-white">$289</span>
                         </div>
-
-                        <!-- Graphique mouvements caisse -->
-                        <div class="bg-white rounded-2xl shadow-soft p-6">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                <i class="fas fa-exchange-alt text-purple-500 mr-2"></i>
-                                Mouvements de caisse
-                            </h3>
-                            <div class="chart-container">
-                                <canvas id="caisseChart"></canvas>
+                        <p class="text-gray-600 dark:text-gray-300 mb-6">Lin français de haute qualité, tissé artisanalement pour une texture unique.</p>
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center text-gray-500 dark:text-gray-400">
+                                <i class="fas fa-palette mr-2"></i>
+                                <span class="text-sm">12 coloris</span>
                             </div>
+                            <button class="px-5 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition">
+                                Découvrir
+                            </button>
                         </div>
                     </div>
+                </div>
+                
+                <!-- Produit 2 -->
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in" style="animation-delay: 0.1s">
+                    <div class="h-64 overflow-hidden relative">
+                        <img src="https://images.unsplash.com/photo-1586023492125-27b2c045efd7?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1760&q=80" 
+                             alt="Stores japonais" 
+                             class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+                    </div>
+                    <div class="p-8">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="font-bold text-xl mb-1 dark:text-white">Stores Japonais</h3>
+                                <p class="text-gray-500 dark:text-gray-400">Élégance et minimalisme</p>
+                            </div>
+                            <span class="font-bold text-2xl dark:text-white">$349</span>
+                        </div>
+                        <p class="text-gray-600 dark:text-gray-300 mb-6">Design épuré, matériaux nobles. Contrôle précis de la lumière naturelle.</p>
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center text-gray-500 dark:text-gray-400">
+                                <i class="fas fa-ruler-combined mr-2"></i>
+                                <span class="text-sm">Sur mesure</span>
+                            </div>
+                            <button class="px-5 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition">
+                                Découvrir
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Produit 3 -->
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift animate-fade-in" style="animation-delay: 0.2s">
+                    <div class="h-64 overflow-hidden relative">
+                        <img src="https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1770&q=80" 
+                             alt="Voilages légers" 
+                             class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+                        <div class="absolute top-4 right-4">
+                            <span class="px-3 py-1 gradient-accent text-white rounded-full text-sm font-medium">Best-seller</span>
+                        </div>
+                    </div>
+                    <div class="p-8">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="font-bold text-xl mb-1 dark:text-white">Voilages Ciel</h3>
+                                <p class="text-gray-500 dark:text-gray-400">Légèreté et translucidité</p>
+                            </div>
+                            <span class="font-bold text-2xl dark:text-white">$159</span>
+                        </div>
+                        <p class="text-gray-600 dark:text-gray-300 mb-6">Tissu organza de soie, diffuse la lumière pour une ambiance apaisante.</p>
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center text-gray-500 dark:text-gray-400">
+                                <i class="fas fa-leaf mr-2"></i>
+                                <span class="text-sm">Éco-responsable</span>
+                            </div>
+                            <button class="px-5 py-2 border-2 border-gray-900 dark:border-gray-300 text-gray-900 dark:text-white rounded-full font-medium hover:bg-gray-900 dark:hover:bg-gray-700 hover:text-white transition">
+                                Découvrir
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-center mt-16">
+                <a href="#" class="inline-flex items-center text-gray-900 dark:text-white font-medium hover:underline">
+                    Voir toute la collection NGS
+                    <i class="fas fa-arrow-right ml-3"></i>
+                </a>
+            </div>
+        </div>
+    </section>
 
-                    <!-- Statistiques par unité -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 animate-fade-in" style="animation-delay: 0.5s">
-                        <?php foreach ($stats_unite as $stat): ?>
-                        <div class="bg-white rounded-2xl shadow-soft p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="flex items-center space-x-3">
-                                    <div class="w-10 h-10 rounded-xl <?= $stat['umProduit'] == 'metres' ? 'bg-blue-100' : 'bg-emerald-100' ?> flex items-center justify-center">
-                                        <i class="<?= $stat['umProduit'] == 'metres' ? 'fas fa-ruler-combined text-blue-600' : 'fas fa-cube text-emerald-600' ?>"></i>
-                                    </div>
-                                    <div>
-                                        <h3 class="font-bold text-gray-900">
-                                            <?= $stat['umProduit'] == 'metres' ? 'Rideaux (mètres)' : 'Produits (pièces)' ?>
-                                        </h3>
-                                        <p class="text-sm text-gray-600">Statistiques détaillées</p>
-                                    </div>
+    <!-- Services Premium -->
+    <section id="services" class="py-20 gradient-bg text-white">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="text-center mb-16">
+                <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6">
+                    L'approche <span class="gradient-text">New Grace Service</span>
+                </h2>
+                <p class="text-gray-300 text-lg max-w-2xl mx-auto">
+                    Un service personnalisé de la conception à l'installation.
+                </p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Service 1 -->
+                <div class="card-glass rounded-3xl p-8 hover-lift">
+                    <div class="w-16 h-16 rounded-2xl gradient-accent flex items-center justify-center mb-6">
+                        <i class="fas fa-pen-ruler text-2xl"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4">Conception</h3>
+                    <p class="text-gray-300 mb-6">
+                        Notre designer vient à votre domicile pour comprendre votre espace et vos besoins.
+                    </p>
+                    <ul class="space-y-3">
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Étude de vos besoins</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Choix des matériaux</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Proposition sur mesure</span>
+                        </li>
+                    </ul>
+                </div>
+                
+                <!-- Service 2 -->
+                <div class="card-glass rounded-3xl p-8 hover-lift">
+                    <div class="w-16 h-16 rounded-2xl gradient-accent flex items-center justify-center mb-6">
+                        <i class="fas fa-cut text-2xl"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4">Fabrication</h3>
+                    <p class="text-gray-300 mb-6">
+                        Nos artisans réalisent vos rideaux dans notre atelier avec un savoir-faire unique.
+                    </p>
+                    <ul class="space-y-3">
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Coupe précise</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Finitions main</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Contrôle qualité</span>
+                        </li>
+                    </ul>
+                </div>
+                
+                <!-- Service 3 -->
+                <div class="card-glass rounded-3xl p-8 hover-lift">
+                    <div class="w-16 h-16 rounded-2xl gradient-accent flex items-center justify-center mb-6">
+                        <i class="fas fa-toolbox text-2xl"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4">Installation</h3>
+                    <p class="text-gray-300 mb-6">
+                        Nos experts installent vos rideaux avec précision pour un rendu parfait.
+                    </p>
+                    <ul class="space-y-3">
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Pose professionnelle</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Réglage minutieux</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check text-accent mr-3"></i>
+                            <span>Conseils d'entretien</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="text-center mt-16">
+                <a href="#contact" class="px-8 py-4 bg-white text-gray-900 rounded-full font-medium hover:bg-gray-100 transition inline-flex items-center">
+                    <i class="fas fa-calendar mr-3"></i>
+                    Prendre rendez-vous avec NGS
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Boutiques -->
+    <section id="boutiques" class="py-20 bg-white dark:bg-gray-900">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex flex-col lg:flex-row items-center justify-between mb-16">
+                <div class="lg:w-1/2 mb-10 lg:mb-0">
+                    <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6 dark:text-white">
+                        Nos <span class="gradient-text">espaces NGS</span>
+                    </h2>
+                    <p class="text-gray-600 dark:text-gray-300 text-lg">
+                        Visitez nos boutiques-ateliers pour découvrir nos matériaux et rencontrer nos experts.
+                    </p>
+                </div>
+                <div class="lg:w-1/2 lg:pl-16">
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
+                            <div class="text-3xl font-bold gradient-text mb-2">3</div>
+                            <div class="font-medium dark:text-gray-300">Boutiques en RDC</div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-800 p-6 rounded-2xl">
+                            <div class="text-3xl font-bold gradient-text mb-2">28</div>
+                            <div class="font-medium dark:text-gray-300">Designers experts</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Carte des boutiques -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+                <!-- Boutique Paris -->
+                <div class="group bg-white dark:bg-gray-800 rounded-3xl overflow-hidden shadow-soft hover-lift">
+                    <div class="h-64 overflow-hidden">
+                        <img src="https://images.unsplash.com/photo-1558618047-3c8c76ca7d13?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1771&q=80" 
+                             alt="Boutique Paris" 
+                             class="w-full h-full object-cover group-hover:scale-110 transition duration-700">
+                    </div>
+                    <div class="p-8">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="font-bold text-2xl mb-2 dark:text-white">Butembo | Rawbank</h3>
+                                <p class="text-gray-500 dark:text-gray-400">show room</p>
+                            </div>
+                            <span class="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-sm font-medium">Nouveau</span>
+                        </div>
+                        <p class="text-gray-600 dark:text-gray-300 mb-6">Notre boutique principale avec salle d'exposition et atelier visible.</p>
+                        <div class="flex items-center text-gray-500 dark:text-gray-400 mb-2">
+                            <i class="fas fa-map-marker-alt mr-3"></i>
+                            <span>Butembo rue president de la republique, pres de la Rawbank</span>
+                        </div>
+                        <div class="flex items-center text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-clock mr-3"></i>
+                            <span>Du lundi au samedi, 08h-17h 30</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Liste des autres boutiques -->
+                <div class="space-y-6">
+                    <!-- Boutique Lyon -->
+                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                        <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
+                            <i class="fas fa-store text-white text-xl"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Butembo | Rue president de la republique</h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">Rue president de la republique, Batiment Kibweli </p>
+                        </div>
+                    </div>
+                    
+                    <!-- Boutique Bordeaux -->
+                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                        <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
+                            <i class="fas fa-store text-white text-xl"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Beni | Boulevard Nyamwisi Batiment Mbayahi </h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">Quartier residentiel , près de la Rawbank</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Boutique Lille -->
+                    <div class="flex items-center p-6 bg-gray-50 dark:bg-gray-800 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                        <div class="w-16 h-16 rounded-xl gradient-accent flex items-center justify-center mr-6">
+                            <i class="fas fa-store text-white text-xl"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-lg mb-1 dark:text-white">Bunia | Rue Ituri</h4>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">Rue Ituri, Batiment Qualitex pres de l'ancien SOFICOM </p>
+                        </div>
+                    </div>
+                    
+                    
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact -->
+    <section id="contact" class="py-20 bg-gray-900 text-white">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                <!-- Formulaire -->
+                <div>
+                    <h2 class="text-4xl lg:text-5xl font-display font-bold mb-6">
+                        Discutons de <span class="gradient-text">votre projet</span>
+                    </h2>
+                    <p class="text-gray-400 mb-10">
+                        Prenez rendez-vous avec l'un de nos designers NGS pour une consultation gratuite à domicile.
+                    </p>
+                    
+                    <form class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <input type="text" 
+                                       placeholder="Prénom" 
+                                       class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent">
+                            </div>
+                            <div>
+                                <input type="text" 
+                                       placeholder="Nom" 
+                                       class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent">
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <input type="email" 
+                                   placeholder="Email" 
+                                   class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent">
+                        </div>
+                        
+                        <div>
+                            <input type="tel" 
+                                   placeholder="Téléphone" 
+                                   class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent">
+                        </div>
+                        
+                        <div>
+                            <textarea rows="5" 
+                                      placeholder="Décrivez votre projet..." 
+                                      class="w-full px-6 py-4 bg-gray-800 border border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-accent"></textarea>
+                        </div>
+                        
+                        <button type="submit" class="px-8 py-4 gradient-accent text-white rounded-xl font-medium hover:opacity-90 transition w-full">
+                            Envoyer ma demande
+                        </button>
+                    </form>
+                </div>
+                
+                <!-- Infos contact -->
+                <div class="lg:pl-12">
+                    <div class="mb-12">
+                        <h3 class="text-2xl font-bold mb-6">Nos coordonnées</h3>
+                        <div class="space-y-6">
+                            <div class="flex items-start">
+                                <div class="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center mr-4">
+                                    <i class="fas fa-phone text-accent"></i>
                                 </div>
-                                <span class="badge-unite <?= $stat['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces' ?>">
-                                    <i class="<?= $stat['umProduit'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube' ?> mr-1"></i>
-                                    <?= $stat['umProduit'] == 'metres' ? 'Mètres' : 'Pièces' ?>
-                                </span>
+                                <div>
+                                    <h4 class="font-bold mb-1">Téléphone</h4>
+                                    <p class="text-gray-400">+243 977 421 421</p>
+                                </div>
                             </div>
                             
-                            <div class="space-y-3">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-600">Nombre de produits:</span>
-                                    <span class="font-bold"><?= $stat['nombre_produits'] ?></span>
+                            <div class="flex items-start">
+                                <div class="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center mr-4">
+                                    <i class="fas fa-envelope text-accent"></i>
                                 </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-600">Quantité totale:</span>
-                                    <span class="font-bold"><?= number_format($stat['quantite_totale'], 3) ?></span>
+                                <div>
+                                    <h4 class="font-bold mb-1">Email</h4>
+                                    <p class="text-gray-400">newgraceservice@gmail.com</p>
                                 </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-gray-600">Valeur totale:</span>
-                                    <span class="font-bold text-green-600"><?= number_format($stat['valeur_totale'], 2) ?> $</span>
+                            </div>
+                            
+                            <div class="flex items-start">
+                                <div class="w-12 h-12 rounded-xl bg-gray-800 flex items-center justify-center mr-4">
+                                    <i class="fas fa-clock text-accent"></i>
+                                </div>
+                                <div>
+                                    <h4 class="font-bold mb-1">Horaires</h4>
+                                    <p class="text-gray-400">Lundi au Samedi : 8h 00 -17h 00</p>
                                 </div>
                             </div>
                         </div>
-                        <?php endforeach; ?>
-                    </div>
-        </div>
-
-        <!-- Onglet Rapport Stocks -->
-        <div id="tab-stocks" class="tab-content hidden">
-            <!-- Note: Les stocks n'ont pas de filtres par date -->
-            <div class="info-box mb-6">
-                <div class="flex items-start space-x-3">
-                    <i class="fas fa-info-circle text-blue-500 mt-0.5"></i>
-                    <div>
-                        <p class="font-medium text-gray-900 mb-1">Information sur les stocks</p>
-                        <p class="text-xs text-gray-600">
-                            Le rapport des stocks montre l'état actuel de votre inventaire.
-                            Les stocks ne sont pas filtrés par date car ils représentent l'état actuel.
-                        </p>
-                    </div>
+                    </div>                    
+                    
                 </div>
             </div>
-
-            <div class="bg-white rounded-2xl shadow-soft overflow-hidden mb-6 animate-fade-in">
-                        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                            <div class="flex flex-col md:flex-row md:items-center md:justify-between">
-                                <h2 class="text-lg font-semibold text-gray-900 mb-2 md:mb-0">
-                                    <i class="fas fa-warehouse text-blue-500 mr-2"></i>
-                                    Rapport détaillé des stocks
-                                </h2>
-                                <div class="flex items-center space-x-2">
-                                    <span class="text-sm text-gray-600">
-                                        <?= count($rapport_stocks) ?> produits en stock
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="table-container">
-                            <table class="w-full min-w-[1000px]">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unité</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantité</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix moyen</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valeur</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mouvements</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    <?php if (!empty($rapport_stocks)): ?>
-                                        <?php foreach ($rapport_stocks as $stock): ?>
-                                            <?php 
-                                            $uniteClass = $stock['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces';
-                                            $uniteText = $stock['umProduit'] == 'metres' ? 'mètres' : 'pièces';
-                                            ?>
-                                            <tr class="hover:bg-gray-50 transition-colors">
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <div>
-                                                        <div class="font-medium"><?= htmlspecialchars($stock['designation']) ?></div>
-                                                        <div class="text-xs text-gray-500 font-mono mt-1">
-                                                            <?= htmlspecialchars($stock['matricule']) ?>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="badge-unite <?= $uniteClass ?>">
-                                                        <i class="<?= $stock['umProduit'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube' ?> mr-1"></i>
-                                                        <?= $uniteText ?>
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-bold">
-                                                        <?= number_format($stock['quantite_totale'], 3) ?>
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <div class="flex items-center">
-                                                        <span class="text-sm font-medium">
-                                                            <?= number_format($stock['prix_moyen'], 2) ?> $
-                                                        </span>
-                                                        <span class="text-xs text-gray-500 ml-2">
-                                                            (<?= number_format($stock['prix_min'], 2) ?>-<?= number_format($stock['prix_max'], 2) ?>)
-                                                        </span>
-                                                    </div>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-bold text-green-600">
-                                                        <?= number_format($stock['valeur_totale'], 2) ?> $
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    <?= $stock['nombre_mouvements'] ?>
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr>
-                                            <td colspan="6" class="px-6 py-8 text-center text-gray-500">
-                                                <i class="fas fa-inbox text-4xl mb-4"></i>
-                                                <p class="text-lg">Aucun stock enregistré</p>
-                                            </td>
-                                        </tr>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
         </div>
+    </section>
 
-        <!-- Onglet Rapport Ventes -->
-        <div id="tab-ventes" class="tab-content hidden">
-            <!-- Filtres pour les ventes -->
-            <div class="filter-section p-4 mb-6">
-                <h3 class="filter-title">
-                    <i class="fas fa-calendar-alt"></i>Filtres pour le rapport des ventes
-                </h3>
-                <form method="GET" class="space-y-4 md:space-y-0 md:flex md:items-end md:space-x-4">
-                    <input type="hidden" name="tab" value="ventes">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Période</label>
-                            <select name="periode" class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white" onchange="this.form.submit()">
-                                <option value="mois" <?= $periode === 'mois' ? 'selected' : '' ?>>Ce mois</option>
-                                <option value="semaine" <?= $periode === 'semaine' ? 'selected' : '' ?>>Cette semaine</option>
-                                <option value="jour" <?= $periode === 'jour' ? 'selected' : '' ?>>Aujourd'hui</option>
-                                <option value="personnalise" <?= $periode === 'personnalise' ? 'selected' : '' ?>>Personnalisé</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Date début</label>
-                            <input type="date" name="date_debut_ventes" value="<?= $date_debut_ventes ?>"
-                                class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white"
-                                <?= $periode !== 'personnalise' ? 'disabled' : '' ?>>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Date fin</label>
-                            <input type="date" name="date_fin_ventes" value="<?= $date_fin_ventes ?>"
-                                class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white"
-                                <?= $periode !== 'personnalise' ? 'disabled' : '' ?>>
-                        </div>
-                    </div>
-                    <div class="flex space-x-3">
-                        <button type="submit" class="px-6 py-3 bg-white text-purple-600 rounded-lg font-semibold hover:bg-white/90 transition-colors">
-                            <i class="fas fa-search mr-2"></i>Filtrer
-                        </button>
-                    </div>
-                </form>
-                <div class="mt-2 text-sm text-white/80">
-                    <i class="fas fa-info-circle mr-1"></i>
-                    Période affichée: <?= date('d/m/Y', strtotime($date_debut_ventes)) ?> au <?= date('d/m/Y', strtotime($date_fin_ventes)) ?>
+    <!-- Footer -->
+    <footer class="py-12 bg-gray-950 text-white">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                
+                
+                <div class="flex space-x-6">
+                    <a href="#" class="text-gray-400 hover:text-white transition">
+                        <i class="fab fa-instagram text-xl"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-white transition">
+                        <i class="fab fa-pinterest text-xl"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-white transition">
+                        <i class="fab fa-linkedin text-xl"></i>
+                    </a>
                 </div>
             </div>
-
-            <!-- Produits les plus vendus -->
-                    <div class="mb-6 animate-fade-in">
-                        <div class="bg-white rounded-2xl shadow-soft p-6">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                <i class="fas fa-trophy text-yellow-500 mr-2"></i>
-                                Top 10 des produits les plus vendus
-                            </h3>
-                            <div class="space-y-4">
-                                <?php if (!empty($top_produits)): ?>
-                                    <?php foreach ($top_produits as $index => $produit): ?>
-                                        <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                                            <div class="flex items-center space-x-3">
-                                                <span class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                                                    <?= $index + 1 ?>
-                                                </span>
-                                                <div>
-                                                    <div class="font-medium"><?= htmlspecialchars($produit['designation']) ?></div>
-                                                    <div class="flex items-center space-x-2 text-sm text-gray-500 mt-1">
-                                                        <span class="badge-unite <?= $produit['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces' ?>">
-                                                            <i class="<?= $produit['umProduit'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube' ?> mr-1"></i>
-                                                            <?= $produit['umProduit'] == 'metres' ? 'mètres' : 'pièces' ?>
-                                                        </span>
-                                                        <span>•</span>
-                                                        <span><?= $produit['nombre_commandes'] ?> commandes</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="text-right">
-                                                <div class="font-bold text-green-600"><?= number_format($produit['chiffre_affaires_produit'], 2) ?> $</div>
-                                                <div class="text-sm text-gray-500"><?= number_format($produit['quantite_vendue'], 3) ?> vendus</div>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <div class="text-center py-8 text-gray-500">
-                                        <i class="fas fa-chart-line text-4xl mb-4"></i>
-                                        <p>Aucune vente enregistrée sur cette période</p>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Détail des ventes par jour -->
-                    <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in" style="animation-delay: 0.1s">
-                        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                            <h3 class="text-lg font-semibold text-gray-900">
-                                <i class="fas fa-calendar-alt text-blue-500 mr-2"></i>
-                                Ventes par jour (30 derniers jours)
-                            </h3>
-                        </div>
-                        <div class="table-container">
-                            <table class="w-full min-w-[800px]">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commandes</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantité vendue</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Chiffre d'affaires</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Panier moyen</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    <?php if (!empty($rapport_ventes)): ?>
-                                        <?php foreach ($rapport_ventes as $vente): ?>
-                                            <tr class="hover:bg-gray-50 transition-colors">
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= date('d/m/Y', strtotime($vente['date_vente'])) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-medium"><?= $vente['nombre_commandes'] ?></span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= number_format($vente['quantite_vendue'], 3) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-bold text-green-600">
-                                                        <?= number_format($vente['chiffre_affaires'], 2) ?> $
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= number_format($vente['panier_moyen'], 2) ?> $
-                                                </td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr>
-                                            <td colspan="5" class="px-6 py-8 text-center text-gray-500">
-                                                <i class="fas fa-chart-line text-4xl mb-4"></i>
-                                                <p>Aucune vente enregistrée sur cette période</p>
-                                            </td>
-                                        </tr>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-        </div>
-
-        <!-- Onglet Rapport Caisse -->
-        <div id="tab-caisse" class="tab-content hidden">
-            <!-- Filtres pour la caisse -->
-            <div class="filter-section p-4 mb-6">
-                <h3 class="filter-title">
-                    <i class="fas fa-calendar-alt"></i>Filtres pour le rapport de caisse
-                </h3>
-                <form method="GET" class="space-y-4 md:space-y-0 md:flex md:items-end md:space-x-4">
-                    <input type="hidden" name="tab" value="caisse">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Période</label>
-                            <select name="periode" class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white" onchange="this.form.submit()">
-                                <option value="mois" <?= $periode === 'mois' ? 'selected' : '' ?>>Ce mois</option>
-                                <option value="semaine" <?= $periode === 'semaine' ? 'selected' : '' ?>>Cette semaine</option>
-                                <option value="jour" <?= $periode === 'jour' ? 'selected' : '' ?>>Aujourd'hui</option>
-                                <option value="personnalise" <?= $periode === 'personnalise' ? 'selected' : '' ?>>Personnalisé</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Date début</label>
-                            <input type="date" name="date_debut_caisse" value="<?= $date_debut_caisse ?>"
-                                class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white"
-                                <?= $periode !== 'personnalise' ? 'disabled' : '' ?>>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-white/90 mb-2">Date fin</label>
-                            <input type="date" name="date_fin_caisse" value="<?= $date_fin_caisse ?>"
-                                class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white"
-                                <?= $periode !== 'personnalise' ? 'disabled' : '' ?>>
-                        </div>
-                    </div>
-                    <div class="flex space-x-3">
-                        <button type="submit" class="px-6 py-3 bg-white text-purple-600 rounded-lg font-semibold hover:bg-white/90 transition-colors">
-                            <i class="fas fa-search mr-2"></i>Filtrer
-                        </button>
-                    </div>
-                </form>
-                <div class="mt-2 text-sm text-white/80">
-                    <i class="fas fa-info-circle mr-1"></i>
-                    Période affichée: <?= date('d/m/Y', strtotime($date_debut_caisse)) ?> au <?= date('d/m/Y', strtotime($date_fin_caisse)) ?>
-                </div>
+            
+            <div class="border-t border-gray-800 mt-12 pt-8 text-center text-gray-500 text-sm">
+                <p>Fabrication française | Matériaux éco-responsables | Garantie 5 ans</p>
+                <p class="mt-2"> Nouveau nom : <span class="text-accent">New Grace Service (NGS)</span></p>
             </div>
-
-            <!-- ... (garder le contenu du rapport caisse) ... -->
         </div>
+    </footer>
 
-        <!-- Onglet Alertes -->
-        <div id="tab-alertes" class="tab-content hidden">
-            <!-- Note: Les alertes n'ont pas de filtres par date -->
-            <div class="info-box mb-6">
-                <div class="flex items-start space-x-3">
-                    <i class="fas fa-info-circle text-blue-500 mt-0.5"></i>
-                    <div>
-                        <p class="font-medium text-gray-900 mb-1">Information sur les alertes</p>
-                        <p class="text-xs text-gray-600">
-                            Les alertes de stock faible sont basées sur l'état actuel de votre inventaire.
-                            Elles ne sont pas filtrées par date car elles représentent la situation actuelle.
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ... (garder le contenu des alertes) ... -->
-        </div>
-    </main>
-    </div>
-    </div>
-
+    <!-- Scripts -->
     <script>
-        // ... (garder tout le JavaScript précédent) ...
-
-        // Fonction pour activer un onglet spécifique
-        function activateTab(tabName) {
-            const tabButton = document.querySelector(`.tab-button[data-tab="${tabName}"]`);
-            if (tabButton) {
-                tabButton.click();
-            }
-        }
-
-        // Vérifier si un onglet spécifique est demandé dans l'URL
-        document.addEventListener('DOMContentLoaded', function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const requestedTab = urlParams.get('tab');
-            if (requestedTab) {
-                activateTab(requestedTab);
-            }
+        // Menu mobile
+        document.getElementById('menu-toggle').addEventListener('click', function() {
+            const mobileMenu = document.getElementById('mobile-menu');
+            mobileMenu.classList.toggle('hidden');
         });
 
-        // Gestion des filtres de période
-        document.querySelectorAll('select[name="periode"]').forEach(select => {
-            select.addEventListener('change', function() {
-                const form = this.closest('form');
-                const dateInputs = form.querySelectorAll('input[type="date"]');
-
-                if (this.value === 'personnalise') {
-                    dateInputs.forEach(input => input.disabled = false);
-                } else {
-                    dateInputs.forEach(input => input.disabled = true);
-                }
-
-                // Soumettre le formulaire automatiquement
-                form.submit();
+        // Fermer le menu mobile en cliquant sur un lien
+        const mobileLinks = document.querySelectorAll('#mobile-menu a');
+        mobileLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                document.getElementById('mobile-menu').classList.add('hidden');
             });
         });
+
+        // Animation au scroll
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('animate-fade-in');
+                }
+            });
+        }, observerOptions);
+
+        // Observer les éléments à animer
+        document.querySelectorAll('.hover-lift').forEach((el, index) => {
+            el.style.animationDelay = `${index * 0.1}s`;
+            observer.observe(el);
+        });
+
+        // Gestion du mode sombre
+        const themeToggle = document.getElementById('theme-toggle');
+        const themeToggleMobile = document.getElementById('theme-toggle-mobile');
+        const body = document.body;
+
+        // Vérifier le thème sauvegardé ou la préférence système
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        
+        // Appliquer le thème initial
+        if (savedTheme === 'dark' || (savedTheme === 'system' && prefersDark)) {
+            body.classList.add('dark-mode');
+        }
+
+        // Fonction pour basculer le thème
+        function toggleTheme() {
+            body.classList.toggle('dark-mode');
+            const isDarkMode = body.classList.contains('dark-mode');
+            localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+        }
+
+        // Ajouter les événements
+        themeToggle.addEventListener('click', toggleTheme);
+        themeToggleMobile.addEventListener('click', toggleTheme);
     </script>
 </body>
-
 </html>
+
+
+<button onclick="window.print()" class="w-full bg-green-600 hover:bg-green-700 text-white font-extrabold py-4 rounded-lg shadow-md transition-all flex items-center justify-center gap-3">
+                    <i class="fas fa-print text-xl"></i>
+                    <span>IMPRIMER LE TICKET</span>
+                </button>
+
+                <a href="ventes_boutique.php" class="w-full bg-slate-700 hover:bg-slate-800 text-white font-bold py-3 rounded-lg shadow transition-all flex items-center justify-center gap-3">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>RETOUR AUX VENTES</span>
+                </a>

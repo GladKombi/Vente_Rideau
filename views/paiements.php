@@ -123,18 +123,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajouter_paiement'])) 
             $query->execute([$commande_id, $boutique_id]);
         }
         
-        $_SESSION['flash_message'] = [
+        // Stocker un message flash pour la page du reçu
+        $_SESSION['recu_message'] = [
             'text' => "Paiement de " . number_format($montant, 3) . " $ ajouté avec succès pour la commande #{$commande_id} !",
             'type' => "success"
         ];
         
-        // Rediriger vers l'impression du reçu si demandé
-        if (isset($_POST['imprimer_recu'])) {
-            header("Location: imprimer_recu.php?id={$paiement_id}");
-            exit;
-        }
-        
-        header("Location: paiements.php");
+        // Rediriger vers le reçu avec impression automatique
+        header("Location: imprimer_recu.php?id={$paiement_id}&auto_print=1");
         exit;
         
     } catch (PDOException $e) {
@@ -786,10 +782,6 @@ try {
                     <i class="fas fa-exchange-alt w-5 text-white"></i>
                     <span>Mouvements Caisse</span>
                 </a>
-                <!-- <a href="clients.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-users w-5 text-gray-300"></i>
-                    <span>Clients</span>
-                </a> -->
                 <a href="stock_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-box w-5 text-gray-300"></i>
                     <span>Stock boutique</span>
@@ -1121,10 +1113,11 @@ try {
                                             <td class="px-4 py-4">
                                                 <div class="flex space-x-2">
                                                     <?php if ($paiement['statut'] == 0): ?>
-                                                        <button onclick="imprimerRecu(<?= $paiement['paiement_id'] ?>)"
-                                                                class="px-3 py-1 bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-lg text-sm transition-colors action-btn">
+                                                        <!-- MODIFICATION ICI : Simple lien pour imprimer le reçu -->
+                                                        <a href="imprimer_recu.php?id=<?= $paiement['paiement_id'] ?>" target="_blank"
+                                                                class="px-3 py-1 bg-orange-50 text-orange-700 hover:bg-orange-100 rounded-lg text-sm transition-colors action-btn inline-flex items-center">
                                                             <i class="fas fa-print mr-1"></i>Reçu
-                                                        </button>
+                                                        </a>
                                                         <button onclick="openModifierModal(<?= $paiement['paiement_id'] ?>, '<?= $paiement['date'] ?>', <?= $paiement['montant'] ?>, <?= $paiement['commande_id'] ?>)"
                                                                 class="px-3 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm transition-colors action-btn">
                                                             <i class="fas fa-edit mr-1"></i>Modifier
@@ -1301,18 +1294,15 @@ try {
                             </div>
                         </div>
                         
-                        <!-- Option impression reçu -->
-                        <div class="mt-4">
-                            <div class="flex items-center">
-                                <input type="checkbox" id="imprimer_recu" name="imprimer_recu" 
-                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                <label for="imprimer_recu" class="ml-2 text-sm text-gray-700">
-                                    Imprimer le reçu après l'ajout
-                                </label>
+                        <!-- Note sur l'impression automatique -->
+                        <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div class="flex items-start">
+                                <i class="fas fa-info-circle text-blue-600 mt-0.5 mr-2"></i>
+                                <div>
+                                    <p class="text-sm text-blue-700 font-medium">Le reçu sera automatiquement imprimé après l'ajout.</p>
+                                    <p class="text-xs text-blue-600 mt-1">Après l'enregistrement, vous serez redirigé vers la page d'impression du reçu.</p>
+                                </div>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1">
-                                Un reçu sera généré automatiquement après l'enregistrement
-                            </p>
                         </div>
                     </div>
                     
@@ -1417,7 +1407,6 @@ try {
             document.getElementById('ajout_montant').value = '';
             document.getElementById('info-commande').classList.add('hidden');
             document.getElementById('montant-validation').classList.add('hidden');
-            document.getElementById('imprimer_recu').checked = true;
         }
         
         function openModifierModal(paiementId, date, montant, commandeId) {
@@ -1665,11 +1654,6 @@ try {
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
             return `${year}-${month}-${day}`;
-        }
-        
-        // Fonction pour imprimer un reçu (simple ouverture de page)
-        function imprimerRecu(paiementId) {
-            window.open('imprimer_recu.php?id=' + paiementId, '_blank');
         }
     </script>
 </body>
