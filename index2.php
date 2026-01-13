@@ -109,6 +109,35 @@
 </head>
 
 <body class="font-sans text-gray-800">
+  <!-- Top Bar -->
+  <div class="bg-gradient-to-r from-blue-900 to-blue-600 text-white py-2">
+    <div class="container mx-auto px-4 flex flex-col md:flex-row justify-between items-center">
+      <div class="flex items-center space-x-4 mb-2 md:mb-0">
+        <div class="flex items-center">
+          <i class="fas fa-envelope text-sm mr-2"></i>
+          <span class="text-sm">newgraceservice@gmail.com</span>
+        </div>
+        <div class="flex items-center">
+          <i class="fas fa-phone ml-4 text-sm mr-2"></i>
+          <span class="text-sm">+243 977 421 421</span>
+        </div>
+      </div>
+      <div class="flex space-x-4">
+        <a href="https://wa.me/243977421421" target="_blank" class="hover:text-blue-200 transition">
+          <i class="fab fa-whatsapp"></i>
+        </a>
+        <a href="#" class="hover:text-blue-200 transition">
+          <i class="fab fa-facebook"></i>
+        </a>
+        <a href="#" class="hover:text-blue-200 transition">
+          <i class="fab fa-instagram"></i>
+        </a>
+        <a href="#" class="hover:text-blue-200 transition">
+          <i class="fab fa-tiktok"></i>
+        </a>
+      </div>
+    </div>
+  </div>
 
   <!-- Header -->
   <header class="sticky top-0 z-50 bg-white shadow-sm">
@@ -166,12 +195,12 @@
         <div class="md:w-1/2 mb-12 md:mb-0 animate-fade-in">
           <div class="inline-flex items-center px-4 py-2 bg-white/20 rounded-full mb-6">
             <div class="w-2 h-2 rounded-full bg-white mr-2"></div>
-            <span class="text-sm font-medium">Un interieure • Une beauté</span>
+            <span class="text-sm font-medium">NOUVEAU NOM • MÊME EXCELLENCE</span>
           </div>
           
           <h1 class="text-4xl md:text-5xl font-bold mb-6 leading-tight">
             L'art du rideau
-            <span class="block text-blue-200 mt-2">Sur mesure</span>
+            <span class="block text-blue-200 mt-2">réinventé</span>
           </h1>
           
           <p class="text-xl mb-8 text-gray-100 leading-relaxed">
@@ -221,7 +250,7 @@
     <div class="container mx-auto px-4">
       <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
         <div class="stat-card bg-white rounded-xl p-6 text-center shadow-sm">
-          <div class="text-3xl font-bold text-blue-900 mb-2">10+</div>
+          <div class="text-3xl font-bold text-blue-900 mb-2">28+</div>
           <div class="text-gray-600 font-medium">Ans d'expertise</div>
         </div>
         <div class="stat-card bg-white rounded-xl p-6 text-center shadow-sm">
@@ -229,7 +258,7 @@
           <div class="text-gray-600 font-medium">Projets réalisés</div>
         </div>
         <div class="stat-card bg-white rounded-xl p-6 text-center shadow-sm">
-          <div class="text-3xl font-bold text-blue-900 mb-2">97%</div>
+          <div class="text-3xl font-bold text-blue-900 mb-2">98%</div>
           <div class="text-gray-600 font-medium">Clients satisfaits</div>
         </div>
         <div class="stat-card bg-white rounded-xl p-6 text-center shadow-sm">
@@ -530,7 +559,7 @@
               </div>
               <div class="flex items-center text-gray-500">
                 <i class="fas fa-phone mr-3 text-blue-600"></i>
-                <span class="text-sm">+243 977 421 421</span>
+                <span class="text-sm">+243 XXX XXX XXX</span>
               </div>
             </div>
           </div>
@@ -562,7 +591,7 @@
               </div>
               <div class="flex items-center text-gray-500">
                 <i class="fas fa-phone mr-3 text-blue-600"></i>
-                <span class="text-sm">+243 977 421 421</span>
+                <span class="text-sm">+243 XXX XXX XXX</span>
               </div>
             </div>
           </div>
@@ -572,9 +601,9 @@
   </section>
 
   <!-- Call to Action - Espace Pro -->
-  <!-- <section class="py-16 bg-gradient-to-r from-blue-900 to-blue-600 text-white">
+  <section class="py-16 bg-gradient-to-r from-blue-900 to-blue-600 text-white">
     <div class="container mx-auto px-4 text-center">
-      <h2 class="text-3xl md:text-4xl font-bold mb-6">l'Espace Pro</h2>
+      <h2 class="text-3xl md:text-4xl font-bold mb-6">Gérez votre entreprise avec notre logiciel NGS</h2>
       <p class="text-xl mb-8 max-w-2xl mx-auto">
         Accédez à votre espace professionnel pour gérer vos ventes, stocks, transferts et rapports en temps réel.
       </p>
@@ -587,7 +616,7 @@
         </a>
       </div>
     </div>
-  </section> -->
+  </section>
 
   <!-- Contact Section -->
   <section id="contact" class="py-16 bg-gray-50">
@@ -693,7 +722,26 @@
               </a>
             </div>
             
-            
+            <!-- Téléchargement de notre application -->
+            <div class="mt-8 pt-8 border-t border-gray-200">
+              <h4 class="font-bold text-lg mb-4">Téléchargez notre application</h4>
+              <div class="flex flex-col sm:flex-row gap-3">
+                <a href="#" class="flex items-center p-3 bg-black text-white rounded-lg hover:bg-gray-800 transition">
+                  <i class="fab fa-apple text-2xl mr-3"></i>
+                  <div>
+                    <div class="text-xs">Disponible sur</div>
+                    <div class="font-bold">App Store</div>
+                  </div>
+                </a>
+                <a href="#" class="flex items-center p-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                  <i class="fab fa-google-play text-2xl mr-3"></i>
+                  <div>
+                    <div class="text-xs">Disponible sur</div>
+                    <div class="font-bold">Play Store</div>
+                  </div>
+                </a>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -820,8 +868,8 @@
       
       <div class="border-t border-gray-700 pt-8 text-center">
         <p class="text-gray-400">
-          © 2026 New Grace Service. Tous droits réservés. | 
-          <span class="text-blue-400">Design by Lad_77</span>
+          © 2024 New Grace Service. Tous droits réservés. | 
+          <span class="text-blue-400">Site web & Logiciel de gestion développé par NGS</span>
         </p>
         <p class="text-gray-500 text-sm mt-2">
           Butembo, République Démocratique du Congo
