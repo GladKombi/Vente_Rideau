@@ -671,25 +671,29 @@ try {
             </div>
 
             <nav class="sidebar-nav p-4 space-y-1">
-                <a href="dashboard_pdg.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                <a href="dashboard_pdg.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors relative">
                     <i class="fas fa-chart-line w-5 text-gray-300"></i>
                     <span>Tableau de bord</span>
                 </a>
-                <a href="gestion_boutiques.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-store w-5 text-gray-300"></i>
-                    <span>Gestion Boutiques</span>
+                <a href="boutiques.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-store w-5 text-white"></i>
+                    <span>Boutiques</span>
                 </a>
-                <a href="gestion_utilisateurs.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-users w-5 text-gray-300"></i>
-                    <span>Gestion Utilisateurs</span>
+                <a href="produits.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-box w-5 text-gray-300"></i>
+                    <span>Produits</span>
                 </a>
-                <a href="gestion_produits.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-boxes w-5 text-gray-300"></i>
-                    <span>Gestion Produits</span>
+                <a href="stocks.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg">
+                    <i class="fas fa-warehouse w-5 text-white"></i>
+                    <span>Stocks</span>
                 </a>
                 <a href="transferts.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-truck-loading w-5 text-gray-300"></i>
+                    <i class="fas fa-exchange-alt w-5 text-gray-300"></i>
                     <span>Transferts</span>
+                </a>
+                <a href="utilisateurs.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-users w-5 text-gray-300"></i>
+                    <span>Utilisateurs</span>
                 </a>
                 <a href="rapports_pdg.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
                     <i class="fas fa-chart-bar w-5 text-white"></i>
@@ -769,7 +773,7 @@ try {
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1">
                             <div>
                                 <label class="block text-sm font-medium text-white/90 mb-2">Période</label>
-                                <select name="periode" class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white placeholder-white/70" onchange="this.form.submit()">
+                                <select name="periode" class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-gray-600 placeholder-white/70" onchange="this.form.submit()">
                                     <option value="mois" <?= $periode === 'mois' ? 'selected' : '' ?>>Ce mois</option>
                                     <option value="semaine" <?= $periode === 'semaine' ? 'selected' : '' ?>>Cette semaine</option>
                                     <option value="jour" <?= $periode === 'jour' ? 'selected' : '' ?>>Aujourd'hui</option>
@@ -778,7 +782,7 @@ try {
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-white/90 mb-2">Boutique</label>
-                                <select name="boutique_id" class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white placeholder-white/70">
+                                <select name="boutique_id" class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-gray-600 placeholder-white/70">
                                     <option value="all" <?= $boutique_id === 'all' ? 'selected' : '' ?>>Toutes les boutiques</option>
                                     <?php foreach ($boutiques as $boutique): ?>
                                         <option value="<?= $boutique['id'] ?>" <?= $boutique_id == $boutique['id'] ? 'selected' : '' ?>>

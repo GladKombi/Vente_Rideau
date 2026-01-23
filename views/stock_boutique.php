@@ -1,9 +1,16 @@
 <?php
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 # Connexion à la base de données
-include '../connexion/connexion.php';
+require_once '../connexion/connexion.php';
 
 // Vérification de l'authentification BOUTIQUE
 if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'boutique') {
+    $_SESSION['flash_message'] = [
+        'text' => 'Veuillez vous connecter pour accéder à cette page',
+        'type' => 'error'
+    ];
     header('Location: ../login.php');
     exit;
 }
@@ -11,6 +18,10 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'boutique') {
 // Récupérer l'ID de la boutique connectée
 $boutique_id = $_SESSION['boutique_id'] ?? null;
 if (!$boutique_id) {
+    $_SESSION['flash_message'] = [
+        'text' => 'Session invalide',
+        'type' => 'error'
+    ];
     header('Location: ../login.php');
     exit;
 }
@@ -66,7 +77,6 @@ try {
         FROM stock s 
         WHERE s.boutique_id = ? 
           AND s.statut = 0
-          AND s.quantite > 0
     ");
     $countQuery->execute([$boutique_id]);
     $total_stocks = $countQuery->fetchColumn();
@@ -84,7 +94,6 @@ try {
         JOIN produits p ON s.produit_matricule = p.matricule 
         WHERE s.boutique_id = :boutique_id 
           AND s.statut = 0
-          AND s.quantite > 0
         ORDER BY 
             CASE 
                 WHEN s.quantite <= s.seuil_alerte_stock THEN 1
@@ -109,7 +118,6 @@ try {
         FROM stock s 
         WHERE s.boutique_id = ? 
           AND s.statut = 0
-          AND s.quantite > 0
     ");
     $queryStats->execute([$boutique_id]);
     $stats = $queryStats->fetch(PDO::FETCH_ASSOC);
@@ -130,7 +138,6 @@ try {
         JOIN produits p ON s.produit_matricule = p.matricule 
         WHERE s.boutique_id = ? 
           AND s.statut = 0
-          AND s.quantite > 0
         GROUP BY p.umProduit
     ");
     $queryStatsUnite->execute([$boutique_id]);
@@ -1168,7 +1175,7 @@ try {
                     </button>
                 </div>
 
-                <form id="enregistrerStockForm" action="../models/enregistrer_stock.php" method="POST">
+                <form id="enregistrerStockForm" action="../models/traitement/enregistrer_stock.php" method="POST">
                     <input type="hidden" name="boutique_id" value="<?= $boutique_id ?>">
                     
                     <div class="space-y-4">

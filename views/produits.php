@@ -894,7 +894,7 @@ try {
                                     <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Désignation</th>
                                     <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider mobile-hide">Unité</th>
                                     <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                    <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                                    <!-- <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th> -->
                                     <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
@@ -934,12 +934,12 @@ try {
                                                 <?= $isRideau ? 'Rideau' : 'Produit' ?>
                                             </span>
                                         </td>
-                                        <td class="px-3 md:px-6 py-2 md:py-4 whitespace-nowrap">
+                                        <!-- <td class="px-3 md:px-6 py-2 md:py-4 whitespace-nowrap">
                                             <span class="status-badge <?= $produit['actif'] ? 'status-active' : 'status-inactive' ?> inline-flex items-center text-xs">
                                                 <i class="fas fa-circle text-[10px] md:text-xs mr-1"></i>
                                                 <?= $produit['actif'] ? 'Actif' : 'Inactif' ?>
                                             </span>
-                                        </td>
+                                        </td> -->
                                         <td class="px-3 md:px-6 py-2 md:py-4 whitespace-nowrap text-xs md:text-sm font-medium">
                                             <div class="flex space-x-1 md:space-x-2 action-buttons action-buttons-mobile">
                                                 <button onclick="openProduitModal('<?= htmlspecialchars(addslashes($produit['matricule'])) ?>'); return false;"

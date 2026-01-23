@@ -349,6 +349,10 @@ try {
                     </span>
                     <?php endif; ?>
                 </a>
+                <a href="transferts-boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <i class="fas fa-truck-loading w-5 text-gray-300"></i>
+                    <span>Transferts</span>
+                </a>
                  <a href="rapports_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
                     <i class="fas fa-chart-bar w-5 text-gray-300"></i>
                     <span>Rapports</span>

@@ -342,12 +342,12 @@ try {
     <div class="ticket force-black text-super-dark">
         <!-- En-tête NGS avec badge PAIEMENT -->
         <div class="text-center mb-1">
-            <div class="flex justify-center items-center mb-2">
+            <!-- <div class="flex justify-center items-center mb-2">
                 <div class="w-12 h-12 bg-gradient-to-r from-blue-600 to-blue-500 rounded-full flex items-center justify-center mr-3">
                     <span class="text-white font-bold text-lg">NGS</span>
                 </div>
                 <h1 class="text-xl font-black tracking-tight">NEW GRACE SERVICE</h1>
-            </div>
+            </div> -->
             <p class="text-[9px] mt-1 opacity-90"><?= htmlspecialchars($paiement['boutique_nom']) ?> | RDC</p>
         </div>
 

@@ -281,14 +281,16 @@ if (empty($commande['numero_facture'])) {
     <div class="ticket force-black text-super-dark">
         <!-- En-tête NGS -->
         <div class="text-center mb-4">
-            <div class="flex justify-center items-center mb-2">
+            <!-- <div class="flex justify-center items-center mb-2">
                 <div class="w-12 h-12 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full flex items-center justify-center">
                     <span class="text-white font-bold text-lg">NGS</span>
                 </div>
                 <h1 class="text-xl font-black tracking-tight">NEW GRACE SERVICE</h1>
-            </div>
+            </div> -->
 
-            <p class="text-[9px] mt-1 opacity-80"><?= htmlspecialchars($commande['boutique_nom']) ?> | RDC</p>
+            <p class="text-[9px] mt-1 opacity-100"><?= htmlspecialchars($commande['boutique_nom']) ?> | RDC</p>
+            <p class="text-[9px] mt-1 opacity-80">RCCM : 20-A557</p>
+            <p class="text-[9px] mt-1 opacity-80">+243 977 421 421</p>
         </div>
 
         <div class="line border-dark"></div>
@@ -317,6 +319,7 @@ if (empty($commande['numero_facture'])) {
             <thead>
                 <tr class="border-b-2 border-black">
                     <th class="text-left pb-1 font-black">ARTICLE</th>
+                    <th class="text-center pb-1 font-black">P.U.</th>
                     <th class="text-center pb-1 font-black">QTÉ</th>
                     <th class="text-right pb-1 font-black">TOTAL</th>
                 </tr>
@@ -324,11 +327,14 @@ if (empty($commande['numero_facture'])) {
             <tbody>
                 <?php foreach ($articles as $index => $art): ?>
                     <tr class="<?= $index % 2 === 0 ? 'bg-gray-50' : '' ?>">
-                        <td class="py-1.5 pr-2">
+                        <td class="py-1.5 pr-1">
                             <span class="font-medium"><?= htmlspecialchars($art['designation']) ?></span>
                             <?php if ($art['umProduit']): ?>
-                                <div class="text-[8px] opacity-90">Unité: <?= $art['umProduit'] ?></div>
+                                <div class="text-[7px] opacity-90"><?= $art['umProduit'] ?></div>
                             <?php endif; ?>
+                        </td>
+                        <td class="text-center py-1.5">
+                            <?= number_format($art['prix_unitaire'], 2) ?>
                         </td>
                         <td class="text-center py-1.5">
                             <span class="font-bold"><?= (float)$art['quantite'] ?></span>
