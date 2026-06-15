@@ -1,61 +1,50 @@
 <?php
-# Connexion à la base de données
 include '../connexion/connexion.php';
 
-// Vérification de l'authentification BOUTIQUE
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'boutique') {
     header('Location: ../login.php');
     exit;
 }
 
-// Récupérer l'ID de la boutique connectée
 $boutique_id = $_SESSION['boutique_id'] ?? null;
 if (!$boutique_id) {
     header('Location: ../login.php');
     exit;
 }
 
-// Initialisation des variables
 $message = '';
 $message_type = '';
 $boutique_info = null;
 
-// --- GESTION DES MESSAGES VIA SESSIONS ---
 if (isset($_SESSION['flash_message'])) {
     $message = $_SESSION['flash_message']['text'];
     $message_type = $_SESSION['flash_message']['type'];
     unset($_SESSION['flash_message']);
 }
 
-// Récupérer les informations de la boutique
 try {
     $queryBoutique = $pdo->prepare("SELECT id, nom, email, date_creation, actif FROM boutiques WHERE id = ? AND statut = 0");
     $queryBoutique->execute([$boutique_id]);
     $boutique_info = $queryBoutique->fetch(PDO::FETCH_ASSOC);
-
     if (!$boutique_info) {
-        $_SESSION['flash_message'] = [
-            'text' => "Boutique introuvable ou supprimée",
-            'type' => "error"
-        ];
+        $_SESSION['flash_message'] = ['text' => "Boutique introuvable", 'type' => "error"];
         header('Location: ../login.php');
         exit;
     }
 } catch (PDOException $e) {
-    $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des informations de la boutique : " . $e->getMessage(),
-        'type' => "error"
-    ];
+    $_SESSION['flash_message'] = ['text' => "Erreur : " . $e->getMessage(), 'type' => "error"];
     header('Location: ../login.php');
     exit;
 }
 
-// Récupérer les dates de filtrage
-$date_debut = $_GET['date_debut'] ?? date('Y-m-01'); // Début du mois par défaut
-$date_fin = $_GET['date_fin'] ?? date('Y-m-t'); // Fin du mois par défaut
-$periode = $_GET['periode'] ?? 'mois'; // mois, semaine, jour, personnalise
+$date_debut = $_GET['date_debut'] ?? date('Y-m-01');
+$date_fin = $_GET['date_fin'] ?? date('Y-m-t');
+$periode = $_GET['periode'] ?? 'mois';
 
-// Ajuster les dates selon la période
 if ($periode === 'semaine') {
     $date_debut = date('Y-m-d', strtotime('monday this week'));
     $date_fin = date('Y-m-d', strtotime('sunday this week'));
@@ -64,15 +53,13 @@ if ($periode === 'semaine') {
     $date_fin = date('Y-m-d');
 }
 
-// Initialiser les tableaux de données
 $rapport_stocks = [];
 $alertes_stock = [];
 $rapport_ventes = [];
 $top_produits = [];
 $rapport_mouvements = [];
-$balance_caisse = [];
-
-// Variables de statistiques
+$rapport_transferts = [];
+$rapport_paiements = [];
 $valeur_stock = 0;
 $chiffre_affaires = 0;
 $total_entrees = 0;
@@ -83,344 +70,322 @@ $quantite_totale = 0;
 $stats_unite = [];
 
 try {
-    // --- RAPPORTS STOCKS ---
-    // 1. Stocks par produit
-    $queryStocks = $pdo->prepare("
-        SELECT 
-            p.matricule,
-            p.designation,
-            p.umProduit,
-            SUM(s.quantite) as quantite_totale,
-            AVG(s.prix) as prix_moyen,
-            MIN(s.prix) as prix_min,
-            MAX(s.prix) as prix_max,
-            SUM(s.quantite * s.prix) as valeur_totale,
-            COUNT(s.id) as nombre_mouvements
-        FROM stock s
-        JOIN produits p ON s.produit_matricule = p.matricule
-        WHERE s.boutique_id = ?
-          AND s.statut = 0
-          AND s.quantite > 0
-        GROUP BY p.matricule, p.designation, p.umProduit
-        ORDER BY valeur_totale DESC
-    ");
+    // Stocks
+    $queryStocks = $pdo->prepare("SELECT p.matricule, p.designation, p.umProduit, SUM(s.quantite) as quantite_totale, AVG(s.prix) as prix_moyen, MIN(s.prix) as prix_min, MAX(s.prix) as prix_max, SUM(s.quantite*s.prix) as valeur_totale, COUNT(s.id) as nb FROM stock s JOIN produits p ON s.produit_matricule=p.matricule WHERE s.boutique_id=? AND s.statut=0 AND s.quantite>0 GROUP BY p.matricule ORDER BY valeur_totale DESC");
     $queryStocks->execute([$boutique_id]);
-    $rapport_stocks = $queryStocks->fetchAll(PDO::FETCH_ASSOC);
+    $rapport_stocks = $queryStocks->fetchAll();
 
-    // 2. Alertes de stock faible
-    $queryAlertes = $pdo->prepare("
-        SELECT 
-            p.designation,
-            p.umProduit,
-            s.quantite,
-            s.seuil_alerte_stock,
-            s.date_creation
-        FROM stock s
-        JOIN produits p ON s.produit_matricule = p.matricule
-        WHERE s.boutique_id = ?
-          AND s.statut = 0
-          AND s.quantite <= s.seuil_alerte_stock
-          AND s.quantite > 0
-        ORDER BY s.quantite ASC
-    ");
+    $queryAlertes = $pdo->prepare("SELECT p.designation, p.umProduit, s.quantite, s.seuil_alerte_stock, s.date_creation FROM stock s JOIN produits p ON s.produit_matricule=p.matricule WHERE s.boutique_id=? AND s.statut=0 AND s.quantite<=s.seuil_alerte_stock AND s.quantite>0 ORDER BY s.quantite ASC");
     $queryAlertes->execute([$boutique_id]);
-    $alertes_stock = $queryAlertes->fetchAll(PDO::FETCH_ASSOC);
+    $alertes_stock = $queryAlertes->fetchAll();
 
-    // --- RAPPORTS VENTES ---
-    // Ventes par période (en utilisant commandes et commande_produits)
-    $queryVentes = $pdo->prepare("
-        SELECT 
-            DATE(c.date_commande) as date_vente,
-            COUNT(DISTINCT c.id) as nombre_commandes,
-            SUM(cp.quantite) as quantite_vendue,
-            SUM(cp.quantite * cp.prix_unitaire) as chiffre_affaires,
-            AVG(cp.quantite * cp.prix_unitaire) as panier_moyen
-        FROM commandes c
-        JOIN commande_produits cp ON c.id = cp.commande_id
-        WHERE c.boutique_id = ?
-          AND c.statut = 0
-          AND cp.statut = 0
-          AND DATE(c.date_commande) BETWEEN ? AND ?
-          AND c.etat = 'payee'
-        GROUP BY DATE(c.date_commande)
-        ORDER BY date_vente DESC
-        LIMIT 30
-    ");
+    // Ventes
+    $queryVentes = $pdo->prepare("SELECT DATE(c.date_commande) as date_vente, COUNT(DISTINCT c.id) as nb_cmd, SUM(cp.quantite) as qte, SUM(cp.quantite*cp.prix_unitaire) as ca, AVG(cp.quantite*cp.prix_unitaire) as panier_moyen FROM commandes c JOIN commande_produits cp ON c.id=cp.commande_id WHERE c.boutique_id=? AND c.statut=0 AND cp.statut=0 AND DATE(c.date_commande) BETWEEN ? AND ? AND c.etat='payee' GROUP BY DATE(c.date_commande) ORDER BY date_vente DESC LIMIT 30");
     $queryVentes->execute([$boutique_id, $date_debut, $date_fin]);
-    $rapport_ventes = $queryVentes->fetchAll(PDO::FETCH_ASSOC);
+    $rapport_ventes = $queryVentes->fetchAll();
 
-    // 2. Produits les plus vendus
-    $queryTopProduits = $pdo->prepare("
-        SELECT 
-            p.designation,
-            p.umProduit,
-            SUM(cp.quantite) as quantite_vendue,
-            SUM(cp.quantite * cp.prix_unitaire) as chiffre_affaires_produit,
-            COUNT(DISTINCT c.id) as nombre_commandes
-        FROM commande_produits cp
-        JOIN commandes c ON cp.commande_id = c.id
-        JOIN stock s ON cp.stock_id = s.id
-        JOIN produits p ON s.produit_matricule = p.matricule
-        WHERE c.boutique_id = ?
-          AND cp.statut = 0
-          AND c.statut = 0
-          AND c.etat = 'payee'
-          AND DATE(c.date_commande) BETWEEN ? AND ?
-        GROUP BY p.designation, p.umProduit
-        ORDER BY quantite_vendue DESC
-        LIMIT 10
-    ");
-    $queryTopProduits->execute([$boutique_id, $date_debut, $date_fin]);
-    $top_produits = $queryTopProduits->fetchAll(PDO::FETCH_ASSOC);
+    $queryTop = $pdo->prepare("SELECT p.designation, p.umProduit, SUM(cp.quantite) as qte, SUM(cp.quantite*cp.prix_unitaire) as ca, COUNT(DISTINCT c.id) as nb_cmd FROM commande_produits cp JOIN commandes c ON cp.commande_id=c.id JOIN stock s ON cp.stock_id=s.id JOIN produits p ON s.produit_matricule=p.matricule WHERE c.boutique_id=? AND cp.statut=0 AND c.statut=0 AND c.etat='payee' AND DATE(c.date_commande) BETWEEN ? AND ? GROUP BY p.designation ORDER BY qte DESC LIMIT 10");
+    $queryTop->execute([$boutique_id, $date_debut, $date_fin]);
+    $top_produits = $queryTop->fetchAll();
 
-    // --- RAPPORTS MOUVEMENTS DE CAISSE ---
-    // 1. Mouvements par type
-    $queryMouvements = $pdo->prepare("
-        SELECT 
-            DATE(mc.date_mouvement) as date_mouvement,
-            mc.type_mouvement,
-            SUM(mc.montant) as montant_total,
-            COUNT(mc.id) as nombre_operations
-        FROM mouvement_caisse mc
-        WHERE mc.id_boutique = ?
-          AND DATE(mc.date_mouvement) BETWEEN ? AND ?
-          AND mc.statut = 0
-        GROUP BY DATE(mc.date_mouvement), mc.type_mouvement
-        ORDER BY date_mouvement DESC
-        LIMIT 30
-    ");
-    $queryMouvements->execute([$boutique_id, $date_debut, $date_fin]);
-    $rapport_mouvements = $queryMouvements->fetchAll(PDO::FETCH_ASSOC);
+    // Caisse
+    $queryMvts = $pdo->prepare("SELECT DATE(mc.date_mouvement) as date_mvt, mc.type_mouvement, SUM(mc.montant) as total, COUNT(mc.id) as nb FROM mouvement_caisse mc WHERE mc.id_boutique=? AND DATE(mc.date_mouvement) BETWEEN ? AND ? AND mc.statut=0 GROUP BY DATE(mc.date_mouvement), mc.type_mouvement ORDER BY date_mvt DESC LIMIT 30");
+    $queryMvts->execute([$boutique_id, $date_debut, $date_fin]);
+    $rapport_mouvements = $queryMvts->fetchAll();
 
-    // 2. Balance de caisse
-    $queryBalance = $pdo->prepare("
-        SELECT 
-            type_mouvement,
-            SUM(montant) as montant_total,
-            COUNT(id) as nombre_operations
-        FROM mouvement_caisse
-        WHERE id_boutique = ?
-          AND DATE(date_mouvement) BETWEEN ? AND ?
-          AND statut = 0
-        GROUP BY type_mouvement
-    ");
-    $queryBalance->execute([$boutique_id, $date_debut, $date_fin]);
-    $balance_caisse = $queryBalance->fetchAll(PDO::FETCH_ASSOC);
+    // Transferts
+    $queryTrans = $pdo->prepare("SELECT t.*, be.nom as boutique_exp, bd.nom as boutique_dest, p.designation, p.umProduit FROM transferts t JOIN stock s ON t.stock_id=s.id JOIN produits p ON s.produit_matricule=p.matricule LEFT JOIN boutiques be ON t.Expedition=be.id LEFT JOIN boutiques bd ON t.Destination=bd.id WHERE (t.Expedition=? OR t.Destination=?) AND t.statut=0 AND DATE(t.date) BETWEEN ? AND ? ORDER BY t.date DESC");
+    $queryTrans->execute([$boutique_id, $boutique_id, $date_debut, $date_fin]);
+    $rapport_transferts = $queryTrans->fetchAll();
 
-    // --- STATISTIQUES GÉNÉRALES ---
-    // 1. Valeur totale du stock
-    $queryValeurStock = $pdo->prepare("
-        SELECT SUM(quantite * prix) as valeur_stock
-        FROM stock
-        WHERE boutique_id = ?
-          AND statut = 0
-          AND quantite > 0
-    ");
-    $queryValeurStock->execute([$boutique_id]);
-    $valeur_stock = $queryValeurStock->fetchColumn() ?? 0;
-
-    // 2. Chiffre d'affaires période
-    $queryCA = $pdo->prepare("
-        SELECT SUM(cp.quantite * cp.prix_unitaire) as chiffre_affaires
-        FROM commande_produits cp
-        JOIN commandes c ON cp.commande_id = c.id
-        WHERE c.boutique_id = ?
-          AND cp.statut = 0
-          AND c.statut = 0
-          AND c.etat = 'payee'
-          AND DATE(c.date_commande) BETWEEN ? AND ?
-    ");
-    $queryCA->execute([$boutique_id, $date_debut, $date_fin]);
-    $chiffre_affaires = $queryCA->fetchColumn() ?? 0;
-
-    // 3. Total entrées/sorties caisse
-    $queryCaisse = $pdo->prepare("
-        SELECT 
-            type_mouvement,
-            SUM(montant) as total
-        FROM mouvement_caisse
-        WHERE id_boutique = ?
-          AND DATE(date_mouvement) BETWEEN ? AND ?
-          AND statut = 0
-        GROUP BY type_mouvement
-    ");
-    $queryCaisse->execute([$boutique_id, $date_debut, $date_fin]);
-    $totaux_caisse = [];
-    while ($row = $queryCaisse->fetch(PDO::FETCH_ASSOC)) {
-        $totaux_caisse[$row['type_mouvement']] = $row['total'];
-    }
-
-    $total_entrees = $totaux_caisse['entrée'] ?? 0;
-    $total_sorties = $totaux_caisse['sortie'] ?? 0;
-    $solde_caisse = $total_entrees - $total_sorties;
-
-    // 4. Nombre de produits différents
-    $queryNbProduits = $pdo->prepare("
-        SELECT COUNT(DISTINCT produit_matricule) as nb_produits
-        FROM stock
-        WHERE boutique_id = ?
-          AND statut = 0
-          AND quantite > 0
-    ");
-    $queryNbProduits->execute([$boutique_id]);
-    $nb_produits = $queryNbProduits->fetchColumn() ?? 0;
-
-    // 5. Quantité totale en stock
-    $queryQteStock = $pdo->prepare("
-        SELECT SUM(quantite) as quantite_totale
-        FROM stock
-        WHERE boutique_id = ?
-          AND statut = 0
-          AND quantite > 0
-    ");
-    $queryQteStock->execute([$boutique_id]);
-    $quantite_totale = $queryQteStock->fetchColumn() ?? 0;
-
-    // Statistiques par unité de mesure
-    $queryStatsUnite = $pdo->prepare("
-        SELECT 
-            p.umProduit,
-            COUNT(DISTINCT s.produit_matricule) as nombre_produits,
-            SUM(s.quantite) as quantite_totale,
-            SUM(s.quantite * s.prix) as valeur_totale
-        FROM stock s
-        JOIN produits p ON s.produit_matricule = p.matricule
-        WHERE s.boutique_id = ?
-          AND s.statut = 0
-          AND s.quantite > 0
-        GROUP BY p.umProduit
-    ");
-    $queryStatsUnite->execute([$boutique_id]);
-    $stats_unite = $queryStatsUnite->fetchAll(PDO::FETCH_ASSOC);
-
-    // --- RAPPORTS TRANSFERTS ---
-    $queryTransferts = $pdo->prepare("
-        SELECT 
-            t.id,
-            t.date,
-            t.Expedition as boutique_expedition_id,
-            t.Destination as boutique_destination_id,
-            be.nom as boutique_expedition,
-            bd.nom as boutique_destination,
-            s.produit_matricule,
-            p.designation,
-            p.umProduit,
-            t.statut
-        FROM transferts t
-        JOIN stock s ON t.stock_id = s.id
-        JOIN produits p ON s.produit_matricule = p.matricule
-        LEFT JOIN boutiques be ON t.Expedition = be.id
-        LEFT JOIN boutiques bd ON t.Destination = bd.id
-        WHERE (t.Expedition = ? OR t.Destination = ?)
-          AND t.statut = 0
-          AND DATE(t.date) BETWEEN ? AND ?
-        ORDER BY t.date DESC
-    ");
-    $queryTransferts->execute([$boutique_id, $boutique_id, $date_debut, $date_fin]);
-    $rapport_transferts = $queryTransferts->fetchAll(PDO::FETCH_ASSOC);
-
-    // --- RAPPORTS PAIEMENTS ---
-    $queryPaiements = $pdo->prepare("
-        SELECT 
-            p.id,
-            p.date,
-            p.montant,
-            c.numero_facture,
-            c.client_nom,
-            p.statut
-        FROM paiements p
-        JOIN commandes c ON p.commandes_id = c.id
-        WHERE c.boutique_id = ?
-          AND p.statut = 0
-          AND DATE(p.date) BETWEEN ? AND ?
-        ORDER BY p.date DESC
-    ");
-    $queryPaiements->execute([$boutique_id, $date_debut, $date_fin]);
-    $rapport_paiements = $queryPaiements->fetchAll(PDO::FETCH_ASSOC);
-
-    // Statistiques paiements
+    // Paiements
+    $queryPaie = $pdo->prepare("SELECT p.*, c.numero_facture, c.client_nom FROM paiements p JOIN commandes c ON p.commandes_id=c.id WHERE c.boutique_id=? AND p.statut=0 AND DATE(p.date) BETWEEN ? AND ? ORDER BY p.date DESC");
+    $queryPaie->execute([$boutique_id, $date_debut, $date_fin]);
+    $rapport_paiements = $queryPaie->fetchAll();
     $total_paiements = array_sum(array_column($rapport_paiements, 'montant'));
 
+    // Stats globales
+    $valeur_stock = $pdo->query("SELECT COALESCE(SUM(quantite*prix),0) FROM stock WHERE boutique_id=$boutique_id AND statut=0 AND quantite>0")->fetchColumn();
+    $chiffre_affaires = $pdo->query("SELECT COALESCE(SUM(cp.quantite*cp.prix_unitaire),0) FROM commande_produits cp JOIN commandes c ON cp.commande_id=c.id WHERE c.boutique_id=$boutique_id AND cp.statut=0 AND c.statut=0 AND c.etat='payee' AND DATE(c.date_commande) BETWEEN '$date_debut' AND '$date_fin'")->fetchColumn();
+    $nb_produits = $pdo->query("SELECT COUNT(DISTINCT produit_matricule) FROM stock WHERE boutique_id=$boutique_id AND statut=0 AND quantite>0")->fetchColumn();
+    $quantite_totale = $pdo->query("SELECT COALESCE(SUM(quantite),0) FROM stock WHERE boutique_id=$boutique_id AND statut=0 AND quantite>0")->fetchColumn();
+
+    $tc = $pdo->query("SELECT type_mouvement, SUM(montant) as total FROM mouvement_caisse WHERE id_boutique=$boutique_id AND DATE(date_mouvement) BETWEEN '$date_debut' AND '$date_fin' AND statut=0 GROUP BY type_mouvement")->fetchAll();
+    foreach ($tc as $r) {
+        if ($r['type_mouvement'] == 'entrée') $total_entrees = $r['total'];
+        else $total_sorties = $r['total'];
+    }
+    $solde_caisse = $total_entrees - $total_sorties;
+
+    $su = $pdo->query("SELECT p.umProduit, COUNT(DISTINCT s.produit_matricule) as nb, SUM(s.quantite) as qt, SUM(s.quantite*s.prix) as val FROM stock s JOIN produits p ON s.produit_matricule=p.matricule WHERE s.boutique_id=$boutique_id AND s.statut=0 AND s.quantite>0 GROUP BY p.umProduit")->fetchAll();
+    $stats_unite = $su;
 } catch (PDOException $e) {
-    $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des rapports: " . $e->getMessage(),
-        'type' => "error"
-    ];
+    error_log("Erreur rapports: " . $e->getMessage());
 }
 ?>
 
 <!DOCTYPE html>
-<html lang="fr" class="h-full">
+<html lang="fr" class="scroll-smooth">
 
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <title>Rapports - <?= htmlspecialchars($boutique_info['nom']) ?> - NGS (New Grace Service)</title>
+    <title>Rapports - <?= htmlspecialchars($boutique_info['nom']) ?> - NGS</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
 
     <style>
         :root {
-            --primary: #0A2540;
-            --secondary: #7B61FF;
-            --accent: #00D4AA;
-            --light: #F8FAFC;
-            --dark: #1E293B;
+            --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
+            --glass-bg: rgba(255, 255, 255, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.3);
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --text-primary: #1a1a2e;
+            --text-secondary: #4a4a6a;
+            --text-muted: #6b7280;
+            --accent-gradient: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            --input-bg: rgba(255, 255, 255, 0.9);
+            --input-border: rgba(0, 0, 0, 0.1);
+            --divider: rgba(0, 0, 0, 0.06);
+        }
+
+        .dark {
+            --sidebar-bg: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+            --glass-bg: rgba(15, 23, 42, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+            --input-bg: rgba(30, 41, 59, 0.8);
+            --input-border: rgba(255, 255, 255, 0.1);
+            --divider: rgba(255, 255, 255, 0.06);
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F8FAFC;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 50%, #f5f3ff 100%);
+            color: var(--text-primary);
+            transition: background 0.4s ease, color 0.4s ease;
         }
 
-        .font-display {
-            font-family: 'Outfit', sans-serif;
+        .dark body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
         }
 
-        .gradient-bg {
-            background: linear-gradient(135deg, #0A2540 0%, #1E3A5F 100%);
+        .sidebar {
+            background: var(--sidebar-bg);
         }
 
-        .gradient-accent {
-            background: linear-gradient(90deg, #7B61FF 0%, #00D4AA 100%);
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            transition: all 0.3s ease;
         }
 
-        .gradient-blue-btn {
-            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%);
+        .premium-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.25rem;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+            transition: all 0.3s ease;
+        }
+
+        .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        }
+
+        .dark .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .input-glass {
+            background: var(--input-bg);
+            border: 2px solid var(--input-border);
+            color: var(--text-primary);
+            border-radius: 0.75rem;
+            transition: all 0.3s ease;
+        }
+
+        .input-glass:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+            outline: none;
+        }
+
+        .btn-glass {
+            background: var(--accent-gradient);
             color: white;
-            transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(30, 58, 138, 0.2);
         }
 
-        .gradient-blue-btn:hover {
-            opacity: 0.9;
+        .btn-glass:hover {
             transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(30, 58, 138, 0.35);
         }
 
-        .shadow-soft {
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
+        .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            transition: all 0.3s ease;
+            border-radius: 0.75rem;
         }
 
-        .hover-lift {
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            padding-left: 1.25rem;
         }
 
-        .hover-lift:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+        .nav-link.active {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border-left: 3px solid #a78bfa;
         }
 
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-out;
+        .stat-card {
+            transition: all 0.3s ease;
         }
 
-        @keyframes fadeIn {
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+        }
+
+        .theme-toggle {
+            width: 44px;
+            height: 24px;
+            background: #cbd5e1;
+            border-radius: 12px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .dark .theme-toggle {
+            background: #334155;
+        }
+
+        .theme-toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+
+        .dark .theme-toggle::after {
+            transform: translateX(20px);
+            background: #fbbf24;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge-info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .dark .badge-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+        }
+
+        .dark .badge-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+        }
+
+        .dark .badge-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        .dark .badge-info {
+            background: rgba(59, 130, 246, 0.2);
+            color: #93c5fd;
+        }
+
+        .tab-btn {
+            padding: 0.625rem 1.25rem;
+            border-radius: 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .tab-btn.active {
+            background: var(--accent-gradient);
+            color: white;
+            box-shadow: 0 4px 15px rgba(30, 58, 138, 0.25);
+        }
+
+        .tab-btn:not(.active) {
+            background: var(--glass-bg);
+            color: var(--text-secondary);
+            border: 1px solid var(--glass-border);
+        }
+
+        .tab-btn:not(.active):hover {
+            background: var(--card-bg);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 280px;
+            width: 100%;
+        }
+
+        *:focus-visible {
+            outline: 2px solid #60a5fa;
+            outline-offset: 2px;
+            border-radius: 6px;
+        }
+
+        @keyframes fadeInUp {
             from {
                 opacity: 0;
-                transform: translateY(10px);
+                transform: translateY(16px);
             }
 
             to {
@@ -429,535 +394,187 @@ try {
             }
         }
 
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .status-active {
-            background-color: #D1FAE5;
-            color: #065F46;
-        }
-
-        .status-inactive {
-            background-color: #FEE2E2;
-            color: #991B1B;
-        }
-
-        .sidebar {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        .sidebar-header,
-        .sidebar-profile,
-        .sidebar-footer {
-            flex-shrink: 0;
-        }
-
-        .sidebar-nav {
-            flex: 1;
-            overflow-y: auto;
-            overflow-x: hidden;
-            min-height: 0;
-        }
-
-        .nav-link {
-            position: relative;
-            transition: all 0.3s ease;
-        }
-
-        .nav-link:hover {
-            padding-left: 1.25rem;
-            background: rgba(255, 255, 255, 0.08);
-        }
-
-        .nav-link.active {
-            background: rgba(255, 255, 255, 0.15);
-        }
-
-        .nav-link.active::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 4px;
-            height: 60%;
-            background: var(--accent);
-            border-radius: 0 4px 4px 0;
-        }
-
-        .main-content {
-            height: 100vh;
-            overflow-y: auto;
-        }
-
-        .mobile-menu-btn {
-            transition: transform 0.3s ease;
-        }
-
-        .mobile-menu-btn.active {
-            transform: rotate(90deg);
-        }
-
-        .stats-card {
-            transition: all 0.3s ease;
-        }
-
-        .stats-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
-        }
-
-        .badge-unite {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 500;
-        }
-
-        .badge-metres {
-            background-color: #E0F2FE;
-            color: #0369A1;
-            border: 1px solid #BAE6FD;
-        }
-
-        .badge-pieces {
-            background-color: #DCFCE7;
-            color: #166534;
-            border: 1px solid #BBF7D0;
-        }
-
-        .badge-vente {
-            background-color: #DCFCE7;
-            color: #166534;
-        }
-
-        .badge-entree {
-            background-color: #D1FAE5;
-            color: #065F46;
-        }
-
-        .badge-sortie {
-            background-color: #FEE2E2;
-            color: #991B1B;
-        }
-
-        .tab-button {
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        .tab-button.active {
-            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%);
-            color: white;
-        }
-
-        .tab-button:not(.active) {
-            background-color: #F3F4F6;
-            color: #6B7280;
-        }
-
-        .tab-button:not(.active):hover {
-            background-color: #E5E7EB;
-        }
-
-        .chart-container {
-            position: relative;
-            height: 300px;
-            width: 100%;
-        }
-
-        .filter-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 12px;
-        }
-
-        .badge-transfert-envoi {
-            background-color: #FEF3C7;
-            color: #92400E;
-            border: 1px solid #FDE68A;
-        }
-
-        .badge-transfert-reception {
-            background-color: #D1FAE5;
-            color: #065F46;
-            border: 1px solid #A7F3D0;
-        }
-
-        .badge-paiement {
-            background-color: #DBEAFE;
-            color: #1E40AF;
-            border: 1px solid #BFDBFE;
+        .animate-fade-in-up {
+            animation: fadeInUp 0.4s ease-out forwards;
         }
 
         @media (max-width: 768px) {
-            .modal-content {
-                width: 95%;
-                margin: 10px;
+            .sidebar {
+                transform: translateX(-100%);
             }
 
-            .action-buttons {
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-
-            .action-btn {
-                width: 100%;
-                justify-content: center;
-            }
-
-            .nav-link {
-                padding: 0.75rem 1rem;
-            }
-
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .tab-button {
-                padding: 8px 12px;
-                font-size: 14px;
+            .sidebar.open {
+                transform: translateX(0);
             }
         }
     </style>
 </head>
 
-<body class="font-inter min-h-screen bg-gray-50">
-    <button id="mobileMenuButton" class="mobile-menu-btn md:hidden fixed top-4 left-4 z-50 p-3 text-white bg-gradient-to-r from-blue-600 to-purple-600 rounded-full shadow-lg hover:shadow-xl transition-shadow">
-        <i class="fas fa-bars"></i>
-    </button>
+<body class="h-screen flex overflow-hidden">
 
     <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 
-    <div class="flex h-screen">
-        <aside id="sidebar" class="sidebar w-64 gradient-bg text-white flex flex-col fixed inset-y-0 left-0 transform -translate-x-full md:sticky md:top-0 md:h-full md:translate-x-0 transition-transform duration-300 ease-in-out z-50 md:z-auto">
-            <div class="sidebar-header p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center shadow-lg">
-                        <span class="font-bold text-white text-lg font-display">NGS</span>
-                    </div>
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="sidebar w-64 flex flex-col fixed md:sticky top-0 h-full z-50 transition-transform duration-300 text-white">
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg"><span class="font-bold text-white">NGS</span></div>
+                <div>
+                    <h2 class="font-bold text-sm">NGS Pro</h2>
+                    <p class="text-[10px] text-gray-400">Dashboard Boutique</p>
+                </div>
+            </div>
+        </div>
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-purple-500/20 border border-purple-400/30 flex items-center justify-center"><i class="fas fa-store text-purple-400"></i></div>
+                <div class="min-w-0">
+                    <p class="font-semibold text-sm truncate"><?= htmlspecialchars($boutique_info['nom']) ?></p>
+                    <p class="text-xs text-gray-400 truncate"><?= htmlspecialchars($boutique_info['email'] ?? '') ?></p>
+                </div>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+            <a href="dashboard_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-line w-4 text-center"></i>Tableau de bord</a>
+            <a href="stock_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-warehouse w-4 text-center"></i>Mes stocks</a>
+            <a href="ventes_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-shopping-cart w-4 text-center"></i>Ventes</a>
+            <a href="paiements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-money-bill-wave w-4 text-center"></i>Paiements</a>
+            <a href="mouvements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-exchange-alt w-4 text-center"></i>Mouvements Caisse</a>
+            <a href="transferts-boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-truck-loading w-4 text-center"></i>Transferts</a>
+            <a href="rapports_boutique.php" class="nav-link active flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-bar w-4 text-center"></i>Rapports</a>
+            <a href="realisations.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-images w-4 text-center"></i>Réalisations</a>
+        </nav>
+        <div class="p-3 border-t border-white/10 flex-shrink-0">
+            <div class="flex items-center justify-between px-3 py-2 mb-2"><span class="text-xs text-gray-400"><i class="fas fa-moon mr-1"></i>Thème</span><button id="theme-toggle" class="theme-toggle" aria-label="Changer le thème"></button></div>
+            <a href="../models/logout.php" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors text-sm"><i class="fas fa-sign-out-alt w-4 text-center"></i>Déconnexion</a>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 overflow-y-auto">
+        <header class="sticky top-0 z-30 glass border-b border-white/10">
+            <div class="flex items-center justify-between px-4 md:px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <button id="mobileMenuBtn" class="md:hidden p-2 rounded-lg hover:bg-white/10 transition-colors text-[var(--text-primary)]"><i class="fas fa-bars text-lg"></i></button>
                     <div>
-                        <h1 class="font-display text-xl font-bold">NGS</h1>
-                        <p class="text-xs text-gray-300">New Grace Service - Dashboard Boutique</p>
+                        <h1 class="text-lg md:text-xl font-bold text-[var(--text-primary)]">Rapports - <?= htmlspecialchars($boutique_info['nom']) ?></h1>
+                        <p class="text-xs text-[var(--text-muted)]">Analyse de votre boutique</p>
                     </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="window.location.reload()" class="p-2 rounded-xl glass hover:bg-white/20 transition-all text-[var(--text-muted)]" title="Actualiser"><i class="fas fa-sync-alt text-sm"></i></button>
+                    <button onclick="exportRapports()" class="btn-glass px-4 py-2 rounded-xl text-sm"><i class="fas fa-download mr-1.5"></i>Exporter</button>
                 </div>
             </div>
+        </header>
 
-            <div class="sidebar-profile p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 rounded-full bg-blue-500/20 border-2 border-blue-500/30 flex items-center justify-center relative">
-                        <i class="fas fa-store text-blue-500 text-lg"></i>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-semibold truncate"><?= htmlspecialchars($boutique_info['nom']) ?></h3>
-                        <p class="text-sm text-gray-300 truncate"><?= htmlspecialchars($boutique_info['email'] ?? '') ?></p>
+        <div class="p-4 md:p-6 space-y-6">
+
+            <?php if ($message): ?>
+                <div class="animate-fade-in-up">
+                    <div class="glass rounded-2xl p-4 border-l-4 <?= $message_type === 'success' ? 'border-emerald-500' : 'border-red-500' ?>">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-<?= $message_type === 'success' ? 'check-circle text-emerald-500' : 'exclamation-circle text-red-500' ?> text-xl"></i>
+                            <span class="text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($message) ?></span>
+                            <button onclick="this.closest('.animate-fade-in-up').remove()" class="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button>
+                        </div>
                     </div>
                 </div>
+            <?php endif; ?>
+
+            <!-- Filtres période -->
+            <div class="premium-card p-5 animate-fade-in-up">
+                <form method="GET" class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                        <div>
+                            <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Période</label>
+                            <select name="periode" class="w-full input-glass px-3 py-2.5 text-sm" onchange="this.form.submit()">
+                                <option value="mois" <?= $periode == 'mois' ? 'selected' : '' ?>>Ce mois</option>
+                                <option value="semaine" <?= $periode == 'semaine' ? 'selected' : '' ?>>Cette semaine</option>
+                                <option value="jour" <?= $periode == 'jour' ? 'selected' : '' ?>>Aujourd'hui</option>
+                                <option value="personnalise" <?= $periode == 'personnalise' ? 'selected' : '' ?>>Personnalisé</option>
+                            </select>
+                        </div>
+                        <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Date début</label><input type="date" name="date_debut" value="<?= $date_debut ?>" class="w-full input-glass px-3 py-2.5 text-sm" <?= $periode !== 'personnalise' ? 'disabled' : '' ?>></div>
+                        <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Date fin</label><input type="date" name="date_fin" value="<?= $date_fin ?>" class="w-full input-glass px-3 py-2.5 text-sm" <?= $periode !== 'personnalise' ? 'disabled' : '' ?>></div>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <a href="rapports_boutique.php" class="px-4 py-2 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Réinitialiser</a>
+                        <button type="submit" class="btn-glass px-4 py-2 rounded-xl text-sm">Appliquer</button>
+                    </div>
+                </form>
             </div>
 
-            <nav class="sidebar-nav p-4 space-y-1">
-                <a href="dashboard_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-line w-5 text-gray-300"></i>
-                    <span>Tableau de bord</span>
-                </a>
-                <a href="stock_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-warehouse w-5 text-gray-300"></i>
-                    <span>Mes stocks</span>
-                </a>
-                <a href="ventes_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-shopping-cart w-5 text-gray-300"></i>
-                    <span>Ventes</span>
-                </a>
-                <a href="paiements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-money-bill-wave w-5 text-gray-300"></i>
-                    <span>Paiements</span>
-                </a>
-                <a href="transferts-boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-truck-loading w-5 text-gray-300"></i>
-                    <span>Transferts</span>
-                </a>
-                <a href="mouvements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-exchange-alt w-5 text-gray-300"></i>
-                    <span>Mouvements Caisse</span>
-                </a>
-                <a href="rapports_boutique.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
-                    <i class="fas fa-chart-bar w-5 text-white"></i>
-                    <span>Rapports</span>
-                </a>
-            </nav>
-
-            <div class="sidebar-footer p-4 border-t border-white/10">
-                <a href="../models/logout.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-red-500/10 text-red-300 hover:text-red-200 transition-colors">
-                    <i class="fas fa-sign-out-alt w-5"></i>
-                    <span>Déconnexion</span>
-                </a>
+            <!-- Onglets -->
+            <div class="flex flex-wrap gap-2 animate-fade-in-up" style="animation-delay:0.1s">
+                <button class="tab-btn active" data-tab="stats"><i class="fas fa-chart-pie mr-1.5"></i>Stats</button>
+                <button class="tab-btn" data-tab="stocks"><i class="fas fa-warehouse mr-1.5"></i>Stocks</button>
+                <button class="tab-btn" data-tab="ventes"><i class="fas fa-shopping-cart mr-1.5"></i>Ventes</button>
+                <button class="tab-btn" data-tab="caisse"><i class="fas fa-exchange-alt mr-1.5"></i>Caisse</button>
+                <button class="tab-btn" data-tab="transferts"><i class="fas fa-truck mr-1.5"></i>Transferts</button>
+                <button class="tab-btn" data-tab="paiements"><i class="fas fa-money-bill-wave mr-1.5"></i>Paiements</button>
+                <button class="tab-btn" data-tab="alertes"><i class="fas fa-exclamation-triangle mr-1.5"></i>Alertes</button>
             </div>
-        </aside>
 
-        <div class="main-content flex-1 overflow-y-auto">
-            <header class="boutique-header gradient-bg p-4 md:p-6 sticky top-0 z-30 shadow-lg">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <div class="flex items-center space-x-3">
-                            <div>
-                                <h1 class="text-xl md:text-2xl font-bold text-white">Rapports - <?= htmlspecialchars($boutique_info['nom']) ?></h1>
-                                <p class="text-gray-200 text-sm md:text-base">New Grace Service - Rapports analytiques de votre boutique</p>
+            <!-- Contenu onglets -->
+            <div id="tab-contents">
+
+                <!-- STATS -->
+                <div id="tab-stats" class="tab-content space-y-6">
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-blue-500" style="animation-delay:0s">
+                            <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-blue-600 dark:text-blue-400">Valeur stock</span>
+                                <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"><i class="fas fa-boxes text-blue-600 dark:text-blue-400 text-sm"></i></div>
                             </div>
+                            <p class="text-2xl font-bold text-[var(--text-primary)]"><?= number_format($valeur_stock, 2) ?> $</p>
+                            <p class="text-xs text-[var(--text-muted)] mt-1"><?= $nb_produits ?> produits</p>
                         </div>
-
-                        <div class="mt-3 flex flex-wrap items-center gap-3">
-                            <div class="flex items-center space-x-2 text-sm text-gray-200">
-                                <i class="fas fa-envelope"></i>
-                                <span><?= htmlspecialchars($boutique_info['email'] ?? 'Non spécifié') ?></span>
+                        <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-emerald-500" style="animation-delay:0.1s">
+                            <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">CA période</span>
+                                <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><i class="fas fa-chart-line text-emerald-600 dark:text-emerald-400 text-sm"></i></div>
                             </div>
-                            <div class="flex items-center space-x-2 text-sm text-gray-200">
-                                <i class="fas fa-calendar-alt"></i>
-                                <span>Créée le <?= date('d/m/Y', strtotime($boutique_info['date_creation'])) ?></span>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <span class="status-badge <?= $boutique_info['actif'] ? 'status-active' : 'status-inactive' ?>">
-                                    <i class="fas fa-<?= $boutique_info['actif'] ? 'check-circle' : 'times-circle' ?> mr-1"></i>
-                                    <?= $boutique_info['actif'] ? 'Active' : 'Inactive' ?>
-                                </span>
-                            </div>
+                            <p class="text-2xl font-bold text-[var(--text-primary)]"><?= number_format($chiffre_affaires, 2) ?> $</p>
+                            <p class="text-xs text-[var(--text-muted)] mt-1"><?= date('d/m', strtotime($date_debut)) ?>-<?= date('d/m', strtotime($date_fin)) ?></p>
                         </div>
-                    </div>
-
-                    <div class="flex items-center space-x-4">
-                        <button onclick="refreshPage()"
-                            class="px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
-                            <i class="fas fa-sync-alt"></i>
-                            <span>Actualiser</span>
-                        </button>
-                        <button onclick="exportRapports()"
-                            class="px-4 py-2 gradient-blue-btn text-white rounded-lg flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
-                            <i class="fas fa-download"></i>
-                            <span>Exporter</span>
-                        </button>
-                    </div>
-                </div>
-            </header>
-
-            <main class="p-4 md:p-6">
-                <?php if ($message): ?>
-                    <div class="mb-6 fade-in relative z-10 animate-fade-in">
-                        <div class="
-                            <?php if ($message_type === 'success'): ?>bg-green-50 text-green-700 border border-green-200
-                            <?php elseif ($message_type === 'error'): ?>bg-red-50 text-red-700 border border-red-200
-                            <?php elseif ($message_type === 'warning'): ?>bg-yellow-50 text-yellow-700 border border-yellow-200
-                            <?php else: ?>bg-blue-50 text-blue-700 border border-blue-200<?php endif; ?>
-                            rounded-xl p-4 flex items-center justify-between shadow-soft">
-                            <div class="flex items-center space-x-3">
-                                <?php if ($message_type === 'success'): ?>
-                                    <i class="fas fa-check-circle text-green-600 text-lg"></i>
-                                <?php elseif ($message_type === 'error'): ?>
-                                    <i class="fas fa-exclamation-circle text-red-600 text-lg"></i>
-                                <?php elseif ($message_type === 'warning'): ?>
-                                    <i class="fas fa-exclamation-triangle text-yellow-600 text-lg"></i>
-                                <?php else: ?>
-                                    <i class="fas fa-info-circle text-blue-600 text-lg"></i>
-                                <?php endif; ?>
-                                <span><?= htmlspecialchars($message) ?></span>
+                        <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-cyan-500" style="animation-delay:0.2s">
+                            <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-cyan-600 dark:text-cyan-400">Qté stock</span>
+                                <div class="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-900/30 flex items-center justify-center"><i class="fas fa-weight-hanging text-cyan-600 dark:text-cyan-400 text-sm"></i></div>
                             </div>
-                            <button onclick="this.parentElement.parentElement.style.display='none'" class="text-gray-400 hover:text-gray-600 transition-colors">
-                                <i class="fas fa-times text-lg"></i>
-                            </button>
+                            <p class="text-2xl font-bold text-[var(--text-primary)]"><?= number_format($quantite_totale, 3) ?></p>
+                            <p class="text-xs text-[var(--text-muted)] mt-1">Unités</p>
                         </div>
-                    </div>
-                <?php endif; ?>
-
-                <!-- Filtres de période -->
-                <div class="filter-card p-6 mb-6 rounded-2xl shadow-soft animate-fade-in">
-                    <h3 class="text-lg font-bold text-white mb-4">
-                        <i class="fas fa-filter mr-2"></i>Filtres de période
-                    </h3>
-                    <form method="GET" class="space-y-4 md:space-y-0 md:flex md:items-end md:space-x-4">
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1">
-                            <div>
-                                <label class="block text-sm font-medium text-white/90 mb-2">Période</label>
-                                <select name="periode" class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white placeholder-white/70" onchange="this.form.submit()">
-                                    <option value="mois" <?= $periode === 'mois' ? 'selected' : '' ?>>Ce mois</option>
-                                    <option value="semaine" <?= $periode === 'semaine' ? 'selected' : '' ?>>Cette semaine</option>
-                                    <option value="jour" <?= $periode === 'jour' ? 'selected' : '' ?>>Aujourd'hui</option>
-                                    <option value="personnalise" <?= $periode === 'personnalise' ? 'selected' : '' ?>>Personnalisé</option>
-                                </select>
+                        <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-purple-500" style="animation-delay:0.3s">
+                            <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-purple-600 dark:text-purple-400">Solde caisse</span>
+                                <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center"><i class="fas fa-money-bill-wave text-purple-600 dark:text-purple-400 text-sm"></i></div>
                             </div>
-                            <div>
-                                <label class="block text-sm font-medium text-white/90 mb-2">Date début</label>
-                                <input type="date" name="date_debut" value="<?= $date_debut ?>"
-                                    class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white"
-                                    <?= $periode !== 'personnalise' ? 'disabled' : '' ?>>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-white/90 mb-2">Date fin</label>
-                                <input type="date" name="date_fin" value="<?= $date_fin ?>"
-                                    class="w-full px-4 py-3 rounded-lg border-0 focus:ring-2 focus:ring-white/50 bg-white/20 text-white"
-                                    <?= $periode !== 'personnalise' ? 'disabled' : '' ?>>
-                            </div>
-                        </div>
-                        <div class="flex space-x-3">
-                            <button type="submit" class="px-6 py-3 bg-white text-purple-600 rounded-lg font-semibold hover:bg-white/90 transition-colors">
-                                <i class="fas fa-search mr-2"></i>Appliquer
-                            </button>
-                            <a href="rapports_boutique.php" class="px-6 py-3 bg-white/20 text-white rounded-lg font-semibold hover:bg-white/30 transition-colors">
-                                <i class="fas fa-redo mr-2"></i>Réinitialiser
-                            </a>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- Onglets -->
-                <div class="mb-6 bg-white rounded-2xl shadow-soft p-4 animate-fade-in" style="animation-delay: 0.1s">
-                    <div class="flex flex-wrap gap-2">
-                        <button class="tab-button active" data-tab="stats">
-                            <i class="fas fa-chart-pie mr-2"></i>Statistiques
-                        </button>
-                        <button class="tab-button" data-tab="stocks">
-                            <i class="fas fa-warehouse mr-2"></i>Rapport Stocks
-                        </button>
-                        <button class="tab-button" data-tab="ventes">
-                            <i class="fas fa-shopping-cart mr-2"></i>Rapport Ventes
-                        </button>
-                        <button class="tab-button" data-tab="caisse">
-                            <i class="fas fa-exchange-alt mr-2"></i>Rapport Caisse
-                        </button>
-                        <button class="tab-button" data-tab="transferts">
-                            <i class="fas fa-truck mr-2"></i>Transferts
-                        </button>
-                        <button class="tab-button" data-tab="paiements">
-                            <i class="fas fa-money-bill-wave mr-2"></i>Paiements
-                        </button>
-                        <button class="tab-button" data-tab="alertes">
-                            <i class="fas fa-exclamation-triangle mr-2"></i>Alertes
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Contenu des onglets -->
-
-                <!-- Onglet Statistiques -->
-                <div id="tab-stats" class="tab-content active">
-                    <!-- Statistiques générales -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 stats-grid">
-                        <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-blue-500 animate-fade-in">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                                    <i class="fas fa-boxes text-blue-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-blue-600">Valeur stock</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($valeur_stock, 2) ?> $</h3>
-                            <p class="text-gray-600"><?= $nb_produits ?> produits en stock</p>
-                        </div>
-
-                        <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-emerald-500 animate-fade-in" style="animation-delay: 0.1s">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
-                                    <i class="fas fa-chart-line text-emerald-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-emerald-600">Chiffre d'affaires</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($chiffre_affaires, 2) ?> $</h3>
-                            <p class="text-gray-600">Période: <?= date('d/m/Y', strtotime($date_debut)) ?> - <?= date('d/m/Y', strtotime($date_fin)) ?></p>
-                        </div>
-
-                        <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-cyan-500 animate-fade-in" style="animation-delay: 0.2s">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center">
-                                    <i class="fas fa-weight-hanging text-cyan-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-cyan-600">Quantité totale</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($quantite_totale, 3) ?></h3>
-                            <p class="text-gray-600">Unités en stock</p>
-                        </div>
-
-                        <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-purple-500 animate-fade-in" style="animation-delay: 0.3s">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                                    <i class="fas fa-money-bill-wave text-purple-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-purple-600">Solde caisse</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($solde_caisse, 2) ?> $</h3>
-                            <p class="text-gray-600">Entrées: <?= number_format($total_entrees, 2) ?> $ | Sorties: <?= number_format($total_sorties, 2) ?> $</p>
+                            <p class="text-2xl font-bold <?= $solde_caisse >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' ?>"><?= number_format($solde_caisse, 2) ?> $</p>
+                            <p class="text-xs text-[var(--text-muted)] mt-1">E:<?= number_format($total_entrees, 0) ?> S:<?= number_format($total_sorties, 0) ?></p>
                         </div>
                     </div>
 
-                    <!-- Graphiques -->
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 animate-fade-in" style="animation-delay: 0.4s">
-                        <!-- Graphique ventes -->
-                        <div class="bg-white rounded-2xl shadow-soft p-6">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                <i class="fas fa-chart-line text-blue-500 mr-2"></i>
-                                Évolution des ventes
-                            </h3>
-                            <div class="chart-container">
-                                <canvas id="ventesChart"></canvas>
-                            </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="premium-card p-5">
+                            <h3 class="text-base font-bold text-[var(--text-primary)] mb-4"><i class="fas fa-chart-line text-blue-500 mr-2"></i>Ventes</h3>
+                            <div class="chart-container"><canvas id="ventesChart"></canvas></div>
                         </div>
-
-                        <!-- Graphique mouvements caisse -->
-                        <div class="bg-white rounded-2xl shadow-soft p-6">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                <i class="fas fa-exchange-alt text-purple-500 mr-2"></i>
-                                Mouvements de caisse
-                            </h3>
-                            <div class="chart-container">
-                                <canvas id="caisseChart"></canvas>
-                            </div>
+                        <div class="premium-card p-5">
+                            <h3 class="text-base font-bold text-[var(--text-primary)] mb-4"><i class="fas fa-exchange-alt text-purple-500 mr-2"></i>Caisse</h3>
+                            <div class="chart-container"><canvas id="caisseChart"></canvas></div>
                         </div>
                     </div>
 
-                    <!-- Statistiques par unité -->
                     <?php if (!empty($stats_unite)): ?>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 animate-fade-in" style="animation-delay: 0.5s">
-                            <?php foreach ($stats_unite as $stat): ?>
-                                <div class="bg-white rounded-2xl shadow-soft p-6">
-                                    <div class="flex items-center justify-between mb-4">
-                                        <div class="flex items-center space-x-3">
-                                            <div class="w-10 h-10 rounded-xl <?= $stat['umProduit'] == 'metres' ? 'bg-blue-100' : 'bg-emerald-100' ?> flex items-center justify-center">
-                                                <i class="<?= $stat['umProduit'] == 'metres' ? 'fas fa-ruler-combined text-blue-600' : 'fas fa-cube text-emerald-600' ?>"></i>
-                                            </div>
-                                            <div>
-                                                <h3 class="font-bold text-gray-900">
-                                                    <?= $stat['umProduit'] == 'metres' ? 'Rideaux (mètres)' : 'Produits (pièces)' ?>
-                                                </h3>
-                                                <p class="text-sm text-gray-600">Statistiques détaillées</p>
-                                            </div>
-                                        </div>
-                                        <span class="badge-unite <?= $stat['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces' ?>">
-                                            <i class="<?= $stat['umProduit'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube' ?> mr-1"></i>
-                                            <?= $stat['umProduit'] == 'metres' ? 'Mètres' : 'Pièces' ?>
-                                        </span>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <?php foreach ($stats_unite as $s): ?>
+                                <div class="premium-card p-5">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <div class="flex items-center gap-2"><i class="fas fa-<?= $s['umProduit'] == 'metres' ? 'ruler-combined text-blue-500' : 'cube text-emerald-500' ?>"></i><span class="font-bold text-sm text-[var(--text-primary)]"><?= $s['umProduit'] == 'metres' ? 'Rideaux' : 'Produits' ?></span></div>
+                                        <span class="px-2 py-0.5 rounded-full text-xs <?= $s['umProduit'] == 'metres' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' ?>"><?= $s['umProduit'] == 'metres' ? 'Mètres' : 'Pièces' ?></span>
                                     </div>
-
-                                    <div class="space-y-3">
-                                        <div class="flex justify-between items-center">
-                                            <span class="text-gray-600">Nombre de produits:</span>
-                                            <span class="font-bold"><?= $stat['nombre_produits'] ?></span>
-                                        </div>
-                                        <div class="flex justify-between items-center">
-                                            <span class="text-gray-600">Quantité totale:</span>
-                                            <span class="font-bold"><?= number_format($stat['quantite_totale'], 3) ?></span>
-                                        </div>
-                                        <div class="flex justify-between items-center">
-                                            <span class="text-gray-600">Valeur totale:</span>
-                                            <span class="font-bold text-green-600"><?= number_format($stat['valeur_totale'], 2) ?> $</span>
-                                        </div>
+                                    <div class="space-y-2 text-sm">
+                                        <div class="flex justify-between"><span class="text-[var(--text-muted)]">Produits :</span><span class="font-medium"><?= $s['nb'] ?></span></div>
+                                        <div class="flex justify-between"><span class="text-[var(--text-muted)]">Quantité :</span><span class="font-medium"><?= number_format($s['qt'], 3) ?></span></div>
+                                        <div class="flex justify-between"><span class="text-[var(--text-muted)]">Valeur :</span><span class="font-bold text-emerald-600 dark:text-emerald-400"><?= number_format($s['val'], 2) ?> $</span></div>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -965,747 +582,418 @@ try {
                     <?php endif; ?>
                 </div>
 
-                <!-- Onglet Rapport Stocks -->
+                <!-- STOCKS -->
                 <div id="tab-stocks" class="tab-content hidden">
-                    <div class="bg-white rounded-2xl shadow-soft overflow-hidden mb-6 animate-fade-in">
-                        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                            <div class="flex flex-col md:flex-row md:items-center md:justify-between">
-                                <h2 class="text-lg font-semibold text-gray-900 mb-2 md:mb-0">
-                                    <i class="fas fa-warehouse text-blue-500 mr-2"></i>
-                                    Rapport détaillé des stocks
-                                </h2>
-                                <div class="flex items-center space-x-2">
-                                    <span class="text-sm text-gray-600">
-                                        <?= count($rapport_stocks) ?> produits en stock
-                                    </span>
-                                </div>
-                            </div>
+                    <div class="premium-card overflow-hidden">
+                        <div class="px-5 py-4 border-b border-[var(--divider)] flex items-center justify-between">
+                            <h3 class="text-base font-bold text-[var(--text-primary)]">Détail des stocks</h3><span class="text-xs text-[var(--text-muted)]"><?= count($rapport_stocks) ?> produits</span>
                         </div>
-
                         <div class="overflow-x-auto">
-                            <table class="w-full min-w-[1000px]">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unité</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantité</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix moyen</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valeur</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mouvements</th>
+                            <table class="w-full min-w-[800px]">
+                                <thead>
+                                    <tr class="border-b border-[var(--divider)] text-left">
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Produit</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Unité</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Qté</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Prix moy</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Valeur</th>
                                     </tr>
                                 </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
+                                <tbody class="divide-y divide-[var(--divider)]">
                                     <?php if (!empty($rapport_stocks)): ?>
-                                        <?php foreach ($rapport_stocks as $stock): ?>
-                                            <?php
-                                            $uniteClass = $stock['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces';
-                                            $uniteText = $stock['umProduit'] == 'metres' ? 'mètres' : 'pièces';
-                                            ?>
-                                            <tr class="hover:bg-gray-50 transition-colors">
-                                                <td class="px-6 py-4 whitespace-nowrap">
-                                                    <div>
-                                                        <div class="font-medium text-gray-900"><?= htmlspecialchars($stock['designation']) ?></div>
-                                                        <div class="text-xs text-gray-500 font-mono mt-1">
-                                                            <?= htmlspecialchars($stock['matricule']) ?>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap">
-                                                    <span class="badge-unite <?= $uniteClass ?>">
-                                                        <i class="<?= $stock['umProduit'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube' ?> mr-1"></i>
-                                                        <?= $uniteText ?>
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-bold">
-                                                        <?= number_format($stock['quantite_totale'], 3) ?>
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <div class="flex items-center">
-                                                        <span class="text-sm font-medium">
-                                                            <?= number_format($stock['prix_moyen'], 2) ?> $
-                                                        </span>
-                                                        <span class="text-xs text-gray-500 ml-2">
-                                                            (<?= number_format($stock['prix_min'], 2) ?>-<?= number_format($stock['prix_max'], 2) ?>)
-                                                        </span>
-                                                    </div>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-bold text-green-600">
-                                                        <?= number_format($stock['valeur_totale'], 2) ?> $
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    <?= $stock['nombre_mouvements'] ?>
-                                                </td>
+                                        <?php foreach ($rapport_stocks as $s): $ut = $s['umProduit'] == 'metres' ? 'mètres' : 'pièces'; ?>
+                                            <tr class="hover:bg-white/5 transition-colors">
+                                                <td class="px-5 py-3.5"><span class="text-sm font-medium text-[var(--text-primary)]"><?= htmlspecialchars($s['designation']) ?></span><span class="text-xs text-[var(--text-muted)] block font-mono"><?= $s['matricule'] ?></span></td>
+                                                <td class="px-5 py-3.5"><span class="px-2 py-0.5 rounded-full text-xs <?= $s['umProduit'] == 'metres' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' ?>"><?= $ut ?></span></td>
+                                                <td class="px-5 py-3.5 text-sm font-bold text-[var(--text-primary)]"><?= number_format($s['quantite_totale'], 3) ?></td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= number_format($s['prix_moyen'], 2) ?> $</td>
+                                                <td class="px-5 py-3.5 text-sm font-bold text-emerald-600 dark:text-emerald-400"><?= number_format($s['valeur_totale'], 2) ?> $</td>
                                             </tr>
                                         <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr>
-                                            <td colspan="6" class="px-6 py-8 text-center text-gray-500">
-                                                <i class="fas fa-inbox text-4xl mb-4"></i>
-                                                <p class="text-lg">Aucun stock enregistré</p>
-                                            </td>
-                                        </tr>
-                                    <?php endif; ?>
+                                    <?php else: ?><tr>
+                                            <td colspan="5" class="px-5 py-12 text-center text-[var(--text-muted)]">Aucun stock</td>
+                                        </tr><?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
 
-                <!-- Onglet Rapport Ventes -->
-                <div id="tab-ventes" class="tab-content hidden">
-                    <!-- Produits les plus vendus -->
-                    <div class="mb-6 animate-fade-in">
-                        <div class="bg-white rounded-2xl shadow-soft p-6">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                <i class="fas fa-trophy text-yellow-500 mr-2"></i>
-                                Top 10 des produits les plus vendus
-                            </h3>
-                            <div class="space-y-4">
-                                <?php if (!empty($top_produits)): ?>
-                                    <?php foreach ($top_produits as $index => $produit): ?>
-                                        <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                                            <div class="flex items-center space-x-3">
-                                                <span class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
-                                                    <?= $index + 1 ?>
-                                                </span>
-                                                <div>
-                                                    <div class="font-medium text-gray-900"><?= htmlspecialchars($produit['designation']) ?></div>
-                                                    <div class="flex items-center space-x-2 text-sm text-gray-500 mt-1">
-                                                        <span class="badge-unite <?= $produit['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces' ?>">
-                                                            <i class="<?= $produit['umProduit'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube' ?> mr-1"></i>
-                                                            <?= $produit['umProduit'] == 'metres' ? 'mètres' : 'pièces' ?>
-                                                        </span>
-                                                        <span>•</span>
-                                                        <span><?= $produit['nombre_commandes'] ?> commandes</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="text-right">
-                                                <div class="font-bold text-green-600"><?= number_format($produit['chiffre_affaires_produit'], 2) ?> $</div>
-                                                <div class="text-sm text-gray-500"><?= number_format($produit['quantite_vendue'], 3) ?> vendus</div>
+                <!-- VENTES -->
+                <div id="tab-ventes" class="tab-content hidden space-y-6">
+                    <div class="premium-card p-5">
+                        <h3 class="text-base font-bold text-[var(--text-primary)] mb-4"><i class="fas fa-trophy text-amber-500 mr-2"></i>Top 10 ventes</h3>
+                        <?php if (!empty($top_produits)): ?>
+                            <div class="space-y-2">
+                                <?php foreach ($top_produits as $i => $p): ?>
+                                    <div class="flex items-center justify-between p-3 rounded-xl hover:bg-white/5 transition-colors">
+                                        <div class="flex items-center gap-3 min-w-0">
+                                            <span class="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold flex-shrink-0"><?= $i + 1 ?></span>
+                                            <div class="min-w-0">
+                                                <p class="text-sm font-medium text-[var(--text-primary)] truncate"><?= htmlspecialchars($p['designation']) ?></p>
+                                                <p class="text-xs text-[var(--text-muted)]"><?= $p['nb_cmd'] ?> cmd</p>
                                             </div>
                                         </div>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <div class="text-center py-8 text-gray-500">
-                                        <i class="fas fa-chart-line text-4xl mb-4"></i>
-                                        <p>Aucune vente enregistrée sur cette période</p>
+                                        <div class="text-right flex-shrink-0 ml-3"><span class="text-sm font-bold text-emerald-600 dark:text-emerald-400"><?= number_format($p['ca'], 2) ?> $</span>
+                                            <p class="text-xs text-[var(--text-muted)]"><?= $p['qte'] ?> vendus</p>
+                                        </div>
                                     </div>
-                                <?php endif; ?>
+                                <?php endforeach; ?>
                             </div>
-                        </div>
+                        <?php else: ?><p class="text-center py-8 text-[var(--text-muted)]">Aucune vente</p><?php endif; ?>
                     </div>
-
-                    <!-- Détail des ventes par jour -->
-                    <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in" style="animation-delay: 0.1s">
-                        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                            <h3 class="text-lg font-semibold text-gray-900">
-                                <i class="fas fa-calendar-alt text-blue-500 mr-2"></i>
-                                Ventes par jour (30 derniers jours)
-                            </h3>
+                    <div class="premium-card overflow-hidden">
+                        <div class="px-5 py-4 border-b border-[var(--divider)]">
+                            <h3 class="text-base font-bold text-[var(--text-primary)]">Ventes par jour</h3>
                         </div>
                         <div class="overflow-x-auto">
-                            <table class="w-full min-w-[800px]">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commandes</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantité vendue</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Chiffre d'affaires</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Panier moyen</th>
+                            <table class="w-full min-w-[600px]">
+                                <thead>
+                                    <tr class="border-b border-[var(--divider)] text-left">
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Date</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Cmd</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Qté</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">CA</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Panier moy</th>
                                     </tr>
                                 </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
+                                <tbody class="divide-y divide-[var(--divider)]">
                                     <?php if (!empty($rapport_ventes)): ?>
-                                        <?php foreach ($rapport_ventes as $vente): ?>
-                                            <tr class="hover:bg-gray-50 transition-colors">
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= date('d/m/Y', strtotime($vente['date_vente'])) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-medium"><?= $vente['nombre_commandes'] ?></span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= number_format($vente['quantite_vendue'], 3) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-bold text-green-600">
-                                                        <?= number_format($vente['chiffre_affaires'], 2) ?> $
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= number_format($vente['panier_moyen'], 2) ?> $
-                                                </td>
+                                        <?php foreach ($rapport_ventes as $v): ?>
+                                            <tr class="hover:bg-white/5 transition-colors">
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-primary)]"><?= date('d/m/Y', strtotime($v['date_vente'])) ?></td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= $v['nb_cmd'] ?></td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= number_format($v['qte'], 3) ?></td>
+                                                <td class="px-5 py-3.5 text-sm font-bold text-emerald-600 dark:text-emerald-400"><?= number_format($v['ca'], 2) ?> $</td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= number_format($v['panier_moyen'], 2) ?> $</td>
                                             </tr>
                                         <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr>
-                                            <td colspan="5" class="px-6 py-8 text-center text-gray-500">
-                                                <i class="fas fa-chart-line text-4xl mb-4"></i>
-                                                <p>Aucune vente enregistrée sur cette période</p>
-                                            </td>
-                                        </tr>
-                                    <?php endif; ?>
+                                    <?php else: ?><tr>
+                                            <td colspan="5" class="px-5 py-12 text-center text-[var(--text-muted)]">Aucune vente</td>
+                                        </tr><?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
 
-                <!-- Onglet Rapport Caisse -->
-                <div id="tab-caisse" class="tab-content hidden">
-                    <!-- Balance de caisse -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 animate-fade-in">
-                        <div class="bg-white rounded-2xl shadow-soft p-6 border-l-4 border-green-500">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
-                                    <i class="fas fa-arrow-down text-green-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-green-600">Entrées</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($total_entrees, 2) ?> $</h3>
-                            <p class="text-gray-600">Total des entrées de caisse</p>
+                <!-- CAISSE -->
+                <div id="tab-caisse" class="tab-content hidden space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="premium-card p-5 border-l-4 border-emerald-500">
+                            <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Entrées</span><i class="fas fa-arrow-down text-emerald-500"></i></div>
+                            <p class="text-2xl font-bold text-[var(--text-primary)]"><?= number_format($total_entrees, 2) ?> $</p>
                         </div>
-
-                        <div class="bg-white rounded-2xl shadow-soft p-6 border-l-4 border-red-500">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center">
-                                    <i class="fas fa-arrow-up text-red-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-red-600">Sorties</span>
-                            </div>
-                            <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($total_sorties, 2) ?> $</h3>
-                            <p class="text-gray-600">Total des sorties de caisse</p>
+                        <div class="premium-card p-5 border-l-4 border-red-500">
+                            <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-red-600 dark:text-red-400">Sorties</span><i class="fas fa-arrow-up text-red-500"></i></div>
+                            <p class="text-2xl font-bold text-[var(--text-primary)]"><?= number_format($total_sorties, 2) ?> $</p>
                         </div>
-
-                        <div class="bg-white rounded-2xl shadow-soft p-6 border-l-4 border-blue-500">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                                    <i class="fas fa-balance-scale text-blue-600 text-xl"></i>
-                                </div>
-                                <span class="text-sm font-medium text-blue-600">Solde</span>
-                            </div>
-                            <h3 class="text-3xl font-bold <?= $solde_caisse >= 0 ? 'text-green-600' : 'text-red-600' ?> mb-2">
-                                <?= number_format($solde_caisse, 2) ?> $
-                            </h3>
-                            <p class="text-gray-600">Balance finale de caisse</p>
+                        <div class="premium-card p-5 border-l-4 border-blue-500">
+                            <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-blue-600 dark:text-blue-400">Solde</span><i class="fas fa-balance-scale text-blue-500"></i></div>
+                            <p class="text-2xl font-bold <?= $solde_caisse >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' ?>"><?= number_format($solde_caisse, 2) ?> $</p>
                         </div>
                     </div>
-
-                    <!-- Détail des mouvements -->
-                    <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in" style="animation-delay: 0.1s">
-                        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                            <h3 class="text-lg font-semibold text-gray-900">
-                                <i class="fas fa-list-alt text-purple-500 mr-2"></i>
-                                Détail des mouvements de caisse
-                            </h3>
+                    <div class="premium-card overflow-hidden">
+                        <div class="px-5 py-4 border-b border-[var(--divider)]">
+                            <h3 class="text-base font-bold text-[var(--text-primary)]">Mouvements</h3>
                         </div>
                         <div class="overflow-x-auto">
-                            <table class="w-full min-w-[800px]">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Montant total</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Opérations</th>
+                            <table class="w-full min-w-[500px]">
+                                <thead>
+                                    <tr class="border-b border-[var(--divider)] text-left">
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Date</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Type</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Montant</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Nb</th>
                                     </tr>
                                 </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
+                                <tbody class="divide-y divide-[var(--divider)]">
                                     <?php if (!empty($rapport_mouvements)): ?>
-                                        <?php foreach ($rapport_mouvements as $mouvement): ?>
-                                            <tr class="hover:bg-gray-50 transition-colors">
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= date('d/m/Y', strtotime($mouvement['date_mouvement'])) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="badge-<?= $mouvement['type_mouvement'] == 'entrée' ? 'entree' : 'sortie' ?>">
-                                                        <i class="fas fa-<?= $mouvement['type_mouvement'] == 'entrée' ? 'arrow-down' : 'arrow-up' ?> mr-1"></i>
-                                                        <?= ucfirst($mouvement['type_mouvement']) ?>
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-bold <?= $mouvement['type_mouvement'] == 'entrée' ? 'text-green-600' : 'text-red-600' ?>">
-                                                        <?= number_format($mouvement['montant_total'], 2) ?> $
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= $mouvement['nombre_operations'] ?> opérations
-                                                </td>
+                                        <?php foreach ($rapport_mouvements as $m): ?>
+                                            <tr class="hover:bg-white/5 transition-colors">
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-primary)]"><?= date('d/m/Y', strtotime($m['date_mvt'])) ?></td>
+                                                <td class="px-5 py-3.5"><span class="px-2 py-0.5 rounded-full text-xs font-medium <?= $m['type_mouvement'] == 'entrée' ? 'badge-success' : 'badge-danger' ?>"><?= ucfirst($m['type_mouvement']) ?></span></td>
+                                                <td class="px-5 py-3.5 text-sm font-bold <?= $m['type_mouvement'] == 'entrée' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' ?>"><?= number_format($m['total'], 2) ?> $</td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= $m['nb'] ?></td>
                                             </tr>
                                         <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr>
-                                            <td colspan="4" class="px-6 py-8 text-center text-gray-500">
-                                                <i class="fas fa-exchange-alt text-4xl mb-4"></i>
-                                                <p>Aucun mouvement de caisse enregistré sur cette période</p>
-                                            </td>
-                                        </tr>
-                                    <?php endif; ?>
+                                    <?php else: ?><tr>
+                                            <td colspan="4" class="px-5 py-12 text-center text-[var(--text-muted)]">Aucun mouvement</td>
+                                        </tr><?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
 
-                <!-- Onglet Transferts -->
+                <!-- TRANSFERTS -->
                 <div id="tab-transferts" class="tab-content hidden">
-                    <div class="bg-white rounded-2xl shadow-soft overflow-hidden mb-6 animate-fade-in">
-                        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                            <div class="flex flex-col md:flex-row md:items-center md:justify-between">
-                                <h2 class="text-lg font-semibold text-gray-900 mb-2 md:mb-0">
-                                    <i class="fas fa-truck text-orange-500 mr-2"></i>
-                                    Historique des transferts
-                                </h2>
-                                <div class="flex items-center space-x-2">
-                                    <span class="text-sm text-gray-600">
-                                        <?= count($rapport_transferts) ?> transferts
-                                    </span>
-                                </div>
-                            </div>
+                    <div class="premium-card overflow-hidden">
+                        <div class="px-5 py-4 border-b border-[var(--divider)] flex items-center justify-between">
+                            <h3 class="text-base font-bold text-[var(--text-primary)]">Transferts</h3><span class="text-xs text-[var(--text-muted)]"><?= count($rapport_transferts) ?> transfert(s)</span>
                         </div>
-
                         <div class="overflow-x-auto">
-                            <table class="w-full min-w-[1000px]">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Boutique source</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Boutique destination</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                            <table class="w-full min-w-[700px]">
+                                <thead>
+                                    <tr class="border-b border-[var(--divider)] text-left">
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Date</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Type</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Produit</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Source</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Dest.</th>
                                     </tr>
                                 </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
+                                <tbody class="divide-y divide-[var(--divider)]">
                                     <?php if (!empty($rapport_transferts)): ?>
-                                        <?php foreach ($rapport_transferts as $transfert): ?>
-                                            <?php
-                                            $estExpediteur = $transfert['boutique_expedition_id'] == $boutique_id;
-                                            $typeTransfert = $estExpediteur ? 'Envoi' : 'Réception';
-                                            $typeBadgeClass = $estExpediteur ? 'badge-transfert-envoi' : 'badge-transfert-reception';
-                                            ?>
-                                            <tr class="hover:bg-gray-50 transition-colors">
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= date('d/m/Y', strtotime($transfert['date'])) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap">
-                                                    <span class="badge-unite <?= $typeBadgeClass ?>">
-                                                        <i class="<?= $estExpediteur ? 'fas fa-share-square' : 'fas fa-inbox' ?> mr-1"></i>
-                                                        <?= $typeTransfert ?>
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap">
-                                                    <div>
-                                                        <div class="font-medium text-gray-900"><?= htmlspecialchars($transfert['designation']) ?></div>
-                                                        <div class="text-xs text-gray-500">
-                                                            <span class="badge-unite <?= $transfert['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces' ?>">
-                                                                <i class="<?= $transfert['umProduit'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube' ?> mr-1"></i>
-                                                                <?= $transfert['umProduit'] == 'metres' ? 'mètres' : 'pièces' ?>
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= htmlspecialchars($transfert['boutique_expedition']) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= htmlspecialchars($transfert['boutique_destination']) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap">
-                                                    <span class="status-badge <?= $transfert['statut'] == 0 ? 'status-active' : 'status-inactive' ?>">
-                                                        <i class="fas fa-<?= $transfert['statut'] == 0 ? 'check-circle' : 'times-circle' ?> mr-1"></i>
-                                                        <?= $transfert['statut'] == 0 ? 'Actif' : 'Supprimé' ?>
-                                                    </span>
-                                                </td>
+                                        <?php foreach ($rapport_transferts as $t): $estExp = $t['Expedition'] == $boutique_id; ?>
+                                            <tr class="hover:bg-white/5 transition-colors">
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-primary)]"><?= date('d/m/Y', strtotime($t['date'])) ?></td>
+                                                <td class="px-5 py-3.5"><span class="px-2 py-0.5 rounded-full text-xs font-medium <?= $estExp ? 'badge-warning' : 'badge-success' ?>"><?= $estExp ? 'Envoi' : 'Réception' ?></span></td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-primary)]"><?= htmlspecialchars($t['designation']) ?></td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($t['boutique_exp']) ?></td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($t['boutique_dest']) ?></td>
                                             </tr>
                                         <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr>
-                                            <td colspan="6" class="px-6 py-8 text-center text-gray-500">
-                                                <i class="fas fa-truck text-4xl mb-4"></i>
-                                                <p class="text-lg">Aucun transfert enregistré</p>
-                                            </td>
-                                        </tr>
-                                    <?php endif; ?>
+                                    <?php else: ?><tr>
+                                            <td colspan="5" class="px-5 py-12 text-center text-[var(--text-muted)]">Aucun transfert</td>
+                                        </tr><?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
 
-                <!-- Onglet Paiements -->
-                <div id="tab-paiements" class="tab-content hidden">
-                    <!-- Statistiques paiements -->
-                    <div class="mb-6 animate-fade-in">
-                        <div class="bg-white rounded-2xl shadow-soft p-6">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                <i class="fas fa-money-bill-wave text-green-500 mr-2"></i>
-                                Statistiques des paiements
-                            </h3>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div class="bg-blue-50 p-4 rounded-lg">
-                                    <div class="text-blue-600 font-bold text-2xl"><?= count($rapport_paiements) ?></div>
-                                    <div class="text-blue-800">Nombre de paiements</div>
-                                </div>
-                                <div class="bg-green-50 p-4 rounded-lg">
-                                    <div class="text-green-600 font-bold text-2xl"><?= number_format($total_paiements, 2) ?> $</div>
-                                    <div class="text-green-800">Total des paiements</div>
-                                </div>
-                                <div class="bg-purple-50 p-4 rounded-lg">
-                                    <div class="text-purple-600 font-bold text-2xl">
-                                        <?= count($rapport_paiements) > 0 ? number_format($total_paiements / count($rapport_paiements), 2) : '0.00' ?> $
-                                    </div>
-                                    <div class="text-purple-800">Moyenne par paiement</div>
-                                </div>
-                            </div>
+                <!-- PAIEMENTS -->
+                <div id="tab-paiements" class="tab-content hidden space-y-6">
+                    <div class="grid grid-cols-3 gap-4">
+                        <div class="premium-card p-5 text-center">
+                            <p class="text-xs text-[var(--text-muted)] mb-1">Nombre</p>
+                            <p class="text-2xl font-bold text-[var(--text-primary)]"><?= count($rapport_paiements) ?></p>
+                        </div>
+                        <div class="premium-card p-5 text-center">
+                            <p class="text-xs text-[var(--text-muted)] mb-1">Total</p>
+                            <p class="text-2xl font-bold text-emerald-600 dark:text-emerald-400"><?= number_format($total_paiements, 2) ?> $</p>
+                        </div>
+                        <div class="premium-card p-5 text-center">
+                            <p class="text-xs text-[var(--text-muted)] mb-1">Moyenne</p>
+                            <p class="text-2xl font-bold text-[var(--text-primary)]"><?= count($rapport_paiements) > 0 ? number_format($total_paiements / count($rapport_paiements), 2) : '0.00' ?> $</p>
                         </div>
                     </div>
-
-                    <!-- Détail des paiements -->
-                    <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in" style="animation-delay: 0.1s">
-                        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                            <h3 class="text-lg font-semibold text-gray-900">
-                                <i class="fas fa-list-alt text-green-500 mr-2"></i>
-                                Détail des paiements
-                            </h3>
+                    <div class="premium-card overflow-hidden">
+                        <div class="px-5 py-4 border-b border-[var(--divider)]">
+                            <h3 class="text-base font-bold text-[var(--text-primary)]">Détail</h3>
                         </div>
                         <div class="overflow-x-auto">
-                            <table class="w-full min-w-[800px]">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Facture</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Montant</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                            <table class="w-full min-w-[600px]">
+                                <thead>
+                                    <tr class="border-b border-[var(--divider)] text-left">
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Date</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Facture</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Client</th>
+                                        <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Montant</th>
                                     </tr>
                                 </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
+                                <tbody class="divide-y divide-[var(--divider)]">
                                     <?php if (!empty($rapport_paiements)): ?>
-                                        <?php foreach ($rapport_paiements as $paiement): ?>
-                                            <tr class="hover:bg-gray-50 transition-colors">
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= date('d/m/Y', strtotime($paiement['date'])) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-medium"><?= htmlspecialchars($paiement['numero_facture']) ?></span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <?= htmlspecialchars($paiement['client_nom']) ?>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                    <span class="font-bold text-green-600">
-                                                        <?= number_format($paiement['montant'], 2) ?> $
-                                                    </span>
-                                                </td>
-                                                <td class="px-6 py-4 whitespace-nowrap">
-                                                    <span class="status-badge <?= $paiement['statut'] == 0 ? 'status-active' : 'status-inactive' ?>">
-                                                        <i class="fas fa-<?= $paiement['statut'] == 0 ? 'check-circle' : 'times-circle' ?> mr-1"></i>
-                                                        <?= $paiement['statut'] == 0 ? 'Actif' : 'Supprimé' ?>
-                                                    </span>
-                                                </td>
+                                        <?php foreach ($rapport_paiements as $p): ?>
+                                            <tr class="hover:bg-white/5 transition-colors">
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-primary)]"><?= date('d/m/Y', strtotime($p['date'])) ?></td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($p['numero_facture']) ?></td>
+                                                <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($p['client_nom']) ?></td>
+                                                <td class="px-5 py-3.5 text-sm font-bold text-emerald-600 dark:text-emerald-400"><?= number_format($p['montant'], 2) ?> $</td>
                                             </tr>
                                         <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr>
-                                            <td colspan="5" class="px-6 py-8 text-center text-gray-500">
-                                                <i class="fas fa-money-bill-wave text-4xl mb-4"></i>
-                                                <p>Aucun paiement enregistré sur cette période</p>
-                                            </td>
-                                        </tr>
-                                    <?php endif; ?>
+                                    <?php else: ?><tr>
+                                            <td colspan="4" class="px-5 py-12 text-center text-[var(--text-muted)]">Aucun paiement</td>
+                                        </tr><?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
 
-                <!-- Onglet Alertes -->
+                <!-- ALERTES -->
                 <div id="tab-alertes" class="tab-content hidden">
-                    <!-- Alertes stock faible -->
-                    <div class="mb-6 animate-fade-in">
-                        <div class="bg-white rounded-2xl shadow-soft p-6">
-                            <h3 class="text-lg font-bold text-gray-900 mb-4">
-                                <i class="fas fa-exclamation-triangle text-yellow-500 mr-2"></i>
-                                Alertes stock faible
-                            </h3>
-                            <?php if (!empty($alertes_stock)): ?>
-                                <div class="space-y-3">
-                                    <?php foreach ($alertes_stock as $alerte): ?>
-                                        <div class="flex items-center justify-between p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                            <div class="flex items-center space-x-3">
-                                                <div class="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
-                                                    <i class="fas fa-exclamation text-yellow-600"></i>
-                                                </div>
-                                                <div>
-                                                    <div class="font-medium text-gray-900"><?= htmlspecialchars($alerte['designation']) ?></div>
-                                                    <div class="text-sm text-yellow-700">
-                                                        Stock actuel: <span class="font-bold"><?= number_format($alerte['quantite'], 3) ?></span> |
-                                                        Seuil: <span class="font-bold"><?= $alerte['seuil_alerte_stock'] ?></span> |
-                                                        Unité: <span class="badge-unite <?= $alerte['umProduit'] == 'metres' ? 'badge-metres' : 'badge-pieces' ?>">
-                                                            <?= $alerte['umProduit'] == 'metres' ? 'mètres' : 'pièces' ?>
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="text-sm text-yellow-600">
-                                                Dernier approvisionnement: <?= date('d/m/Y', strtotime($alerte['date_creation'])) ?>
-                                            </div>
+                    <div class="premium-card p-5">
+                        <h3 class="text-base font-bold text-[var(--text-primary)] mb-4"><i class="fas fa-exclamation-triangle text-amber-500 mr-2"></i>Alertes stock faible</h3>
+                        <?php if (!empty($alertes_stock)): ?>
+                            <div class="space-y-2">
+                                <?php foreach ($alertes_stock as $a): ?>
+                                    <div class="flex items-center justify-between p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30">
+                                        <div class="min-w-0 flex-1">
+                                            <p class="text-sm font-medium text-[var(--text-primary)] truncate"><?= htmlspecialchars($a['designation']) ?></p>
+                                            <p class="text-xs text-[var(--text-muted)]">Seuil: <?= $a['seuil_alerte_stock'] ?> • <?= $a['umProduit'] ?></p>
                                         </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php else: ?>
-                                <div class="text-center py-8 text-gray-500">
-                                    <i class="fas fa-check-circle text-4xl mb-4 text-green-500"></i>
-                                    <p>Aucune alerte de stock faible</p>
-                                    <p class="text-sm mt-2">Tous vos produits sont au-dessus du seuil d'alerte.</p>
-                                </div>
-                            <?php endif; ?>
-                        </div>
+                                        <span class="text-lg font-bold text-amber-600 dark:text-amber-400 flex-shrink-0 ml-3"><?= $a['quantite'] ?></span>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?><p class="text-center py-8 text-emerald-500"><i class="fas fa-check-circle text-4xl mb-3"></i><span class="text-[var(--text-secondary)]">Aucune alerte</span></p><?php endif; ?>
                     </div>
                 </div>
-            </main>
+
+            </div>
+
         </div>
-    </div>
+    </main>
 
     <script>
-        // --- GESTION DE LA SIDEBAR MOBILE ---
-        const mobileMenuButton = document.getElementById('mobileMenuButton');
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('overlay');
-
-        function toggleSidebar() {
-            sidebar.classList.toggle('-translate-x-full');
-            overlay.classList.toggle('hidden');
-            mobileMenuButton.classList.toggle('active');
-        }
-
-        mobileMenuButton.addEventListener('click', toggleSidebar);
-        overlay.addEventListener('click', toggleSidebar);
-
-        // --- GESTION DES LIENS ACTIFS ---
-        const currentPage = window.location.pathname.split('/').pop();
-        const navLinks = document.querySelectorAll('.nav-link');
-
-        navLinks.forEach(link => {
-            const href = link.getAttribute('href');
-            if (href === currentPage) {
-                link.classList.add('active');
-            } else {
-                link.classList.remove('active');
-            }
+        // Theme
+        const themeToggle = document.getElementById('theme-toggle'),
+            html = document.documentElement;
+        if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme:dark)').matches)) html.classList.add('dark');
+        themeToggle.addEventListener('click', () => {
+            html.classList.toggle('dark');
+            localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light')
         });
 
-        // --- GESTION DES ONGLETS ---
-        const tabButtons = document.querySelectorAll('.tab-button');
-        const tabContents = document.querySelectorAll('.tab-content');
+        // Sidebar
+        const sidebar = document.getElementById('sidebar'),
+            overlay = document.getElementById('overlay');
 
-        tabButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                // Désactiver tous les boutons
-                tabButtons.forEach(btn => btn.classList.remove('active'));
-                // Activer le bouton cliqué
-                button.classList.add('active');
+        function toggleSidebar() {
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden')
+        }
+        document.getElementById('mobileMenuBtn').addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
 
-                // Cacher tous les contenus
-                tabContents.forEach(content => {
-                    content.classList.remove('active');
-                    content.classList.add('hidden');
-                });
-
-                // Afficher le contenu correspondant
-                const tabId = button.getAttribute('data-tab');
-                const tabContent = document.getElementById(`tab-${tabId}`);
-                if (tabContent) {
-                    tabContent.classList.remove('hidden');
-                    tabContent.classList.add('active');
+        // Tabs
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const tabId = btn.dataset.tab;
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+                document.getElementById('tab-' + tabId)?.classList.remove('hidden');
+                if (tabId === 'stats') {
+                    setTimeout(() => {
+                        initCharts()
+                    }, 100)
                 }
             });
         });
 
-        // --- FONCTION DE RAFRAÎCHISSEMENT ---
-        function refreshPage() {
-            const button = event.target.closest('button');
-            if (button) {
-                button.classList.add('animate-spin');
-                setTimeout(() => {
-                    button.classList.remove('animate-spin');
-                    window.location.reload();
-                }, 500);
-            }
-        }
+        // Charts
+        function initCharts() {
+            const vCtx = document.getElementById('ventesChart'),
+                cCtx = document.getElementById('caisseChart');
+            if (!vCtx || !cCtx) return;
 
-        // --- FONCTION D'EXPORT ---
-        function exportRapports() {
-            const tabActive = document.querySelector('.tab-button.active');
-            const tabId = tabActive ? tabActive.getAttribute('data-tab') : 'stats';
-
-            let exportUrl = `export_rapports.php?tab=${tabId}&date_debut=<?= $date_debut ?>&date_fin=<?= $date_fin ?>&boutique_id=<?= $boutique_id ?>`;
-
-            // Ouvrir dans un nouvel onglet pour téléchargement
-            window.open(exportUrl, '_blank');
-        }
-
-        // --- GRAPHIQUES ---
-        document.addEventListener('DOMContentLoaded', function() {
-            // Données pour le graphique des ventes
-            const ventesData = {
-                labels: [
-                    <?php foreach ($rapport_ventes as $vente): ?> '<?= date('d/m', strtotime($vente['date_vente'])) ?>',
-                    <?php endforeach; ?>
-                ],
-                datasets: [{
-                    label: 'Chiffre d\'affaires ($)',
-                    data: [
-                        <?php foreach ($rapport_ventes as $vente): ?>
-                            <?= $vente['chiffre_affaires'] ?>,
-                        <?php endforeach; ?>
-                    ],
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4
-                }]
-            };
-
-            // Créer le graphique des ventes
-            const ventesCtx = document.getElementById('ventesChart');
-            if (ventesCtx) {
-                new Chart(ventesCtx, {
-                    type: 'line',
-                    data: ventesData,
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: true,
-                                position: 'top'
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    callback: function(value) {
-                                        return value.toLocaleString('fr-FR', {
-                                            minimumFractionDigits: 2
-                                        }) + ' $';
-                                    }
-                                }
+            <?php $vl = [];
+            $vd = [];
+            foreach ($rapport_ventes as $v) {
+                $vl[] = "'" . date('d/m', strtotime($v['date_vente'])) . "'";
+                $vd[] = $v['ca'];
+            } ?>
+            new Chart(vCtx, {
+                type: 'line',
+                data: {
+                    labels: [<?= implode(',', $vl) ?>],
+                    datasets: [{
+                        label: 'CA ($)',
+                        data: [<?= implode(',', $vd) ?>],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59,130,246,0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: v => v.toLocaleString('fr-FR') + ' $'
                             }
                         }
                     }
-                });
-            }
-
-            // Données pour le graphique de caisse
-            <?php
-            // Grouper les mouvements par date
-            $mouvements_par_date = [];
-            foreach ($rapport_mouvements as $mouvement) {
-                $date = $mouvement['date_mouvement'];
-                if (!isset($mouvements_par_date[$date])) {
-                    $mouvements_par_date[$date] = ['entrée' => 0, 'sortie' => 0];
                 }
-                $mouvements_par_date[$date][$mouvement['type_mouvement']] = $mouvement['montant_total'];
+            });
+
+            <?php
+            $md = [];
+            $me = [];
+            $ms = [];
+            foreach ($rapport_mouvements as $m) {
+                $md[] = "'" . date('d/m', strtotime($m['date_mvt'])) . "'";
+                $me[] = $m['type_mouvement'] == 'entrée' ? $m['total'] : 0;
+                $ms[] = $m['type_mouvement'] == 'sortie' ? $m['total'] : 0;
             }
-
-            // Trier par date et limiter
-            krsort($mouvements_par_date);
-            $mouvements_par_date = array_slice($mouvements_par_date, 0, 15, true);
             ?>
-
-            const caisseData = {
-                labels: [
-                    <?php foreach ($mouvements_par_date as $date => $mouvements): ?> '<?= date('d/m', strtotime($date)) ?>',
-                    <?php endforeach; ?>
-                ],
-                datasets: [{
-                    label: 'Entrées',
-                    data: [
-                        <?php foreach ($mouvements_par_date as $mouvements): ?>
-                            <?= $mouvements['entrée'] ?? 0 ?>,
-                        <?php endforeach; ?>
-                    ],
-                    backgroundColor: '#10b981',
-                    borderColor: '#10b981',
-                    borderWidth: 1
-                }, {
-                    label: 'Sorties',
-                    data: [
-                        <?php foreach ($mouvements_par_date as $mouvements): ?>
-                            <?= $mouvements['sortie'] ?? 0 ?>,
-                        <?php endforeach; ?>
-                    ],
-                    backgroundColor: '#ef4444',
-                    borderColor: '#ef4444',
-                    borderWidth: 1
-                }]
-            };
-
-            // Créer le graphique de caisse
-            const caisseCtx = document.getElementById('caisseChart');
-            if (caisseCtx) {
-                new Chart(caisseCtx, {
-                    type: 'bar',
-                    data: caisseData,
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: true,
-                                position: 'top'
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                stacked: false,
-                                ticks: {
-                                    callback: function(value) {
-                                        return value.toLocaleString('fr-FR', {
-                                            minimumFractionDigits: 2
-                                        }) + ' $';
-                                    }
-                                }
-                            },
-                            x: {
-                                stacked: false
+            new Chart(cCtx, {
+                type: 'bar',
+                data: {
+                    labels: [<?= implode(',', $md) ?>],
+                    datasets: [{
+                        label: 'Entrées',
+                        data: [<?= implode(',', $me) ?>],
+                        backgroundColor: '#10b981'
+                    }, {
+                        label: 'Sorties',
+                        data: [<?= implode(',', $ms) ?>],
+                        backgroundColor: '#ef4444'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: v => v.toLocaleString('fr-FR') + ' $'
                             }
                         }
                     }
-                });
-            }
+                }
+            });
+        }
+
+        // Init charts on load
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(initCharts, 300)
         });
 
-        // --- GESTION DES FILTRES ---
-        document.querySelector('select[name="periode"]').addEventListener('change', function() {
-            const dateDebut = document.querySelector('input[name="date_debut"]');
-            const dateFin = document.querySelector('input[name="date_fin"]');
-
+        // Filter period
+        document.querySelector('select[name="periode"]')?.addEventListener('change', function() {
+            const dd = document.querySelector('input[name="date_debut"]'),
+                df = document.querySelector('input[name="date_fin"]');
             if (this.value === 'personnalise') {
-                dateDebut.disabled = false;
-                dateFin.disabled = false;
+                dd.disabled = false;
+                df.disabled = false
             } else {
-                dateDebut.disabled = true;
-                dateFin.disabled = true;
+                dd.disabled = true;
+                df.disabled = true
             }
         });
 
-        // --- NAVIGATION CLAVIER ---
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                if (!sidebar.classList.contains('-translate-x-full')) toggleSidebar();
-            }
+        // Export
+        function exportRapports() {
+            const tab = document.querySelector('.tab-btn.active')?.dataset.tab || 'stats';
+            window.open(`export_rapports.php?tab=${tab}&date_debut=<?= $date_debut ?>&date_fin=<?= $date_fin ?>&boutique_id=<?= $boutique_id ?>`, '_blank');
+        }
+
+        // Escape
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && sidebar.classList.contains('open')) toggleSidebar()
         });
     </script>
+
+    <?php unset($_SESSION['msg']); ?>
 </body>
 
 </html>

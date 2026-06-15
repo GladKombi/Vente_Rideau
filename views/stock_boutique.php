@@ -2,64 +2,49 @@
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-# Connexion à la base de données
 require_once '../connexion/connexion.php';
 
-// Vérification de l'authentification BOUTIQUE
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'boutique') {
-    $_SESSION['flash_message'] = [
-        'text' => 'Veuillez vous connecter pour accéder à cette page',
-        'type' => 'error'
-    ];
+    $_SESSION['flash_message'] = ['text' => 'Veuillez vous connecter', 'type' => 'error'];
     header('Location: ../login.php');
     exit;
 }
 
-// Récupérer l'ID de la boutique connectée
 $boutique_id = $_SESSION['boutique_id'] ?? null;
 if (!$boutique_id) {
-    $_SESSION['flash_message'] = [
-        'text' => 'Session invalide',
-        'type' => 'error'
-    ];
+    $_SESSION['flash_message'] = ['text' => 'Session invalide', 'type' => 'error'];
     header('Location: ../login.php');
     exit;
 }
 
-// Initialisation des variables
 $message = '';
 $message_type = '';
 $total_stocks = 0;
 $stocks = [];
 $boutique_info = null;
 
-// --- GESTION DES MESSAGES VIA SESSIONS ---
 if (isset($_SESSION['flash_message'])) {
     $message = $_SESSION['flash_message']['text'];
     $message_type = $_SESSION['flash_message']['type'];
     unset($_SESSION['flash_message']);
 }
 
-// Récupérer les informations de la boutique
+// Infos boutique
 try {
     $queryBoutique = $pdo->prepare("SELECT id, nom, email, date_creation, actif FROM boutiques WHERE id = ? AND statut = 0");
     $queryBoutique->execute([$boutique_id]);
     $boutique_info = $queryBoutique->fetch(PDO::FETCH_ASSOC);
-    
     if (!$boutique_info) {
-        $_SESSION['flash_message'] = [
-            'text' => "Boutique introuvable ou supprimée",
-            'type' => "error"
-        ];
+        $_SESSION['flash_message'] = ['text' => "Boutique introuvable", 'type' => "error"];
         header('Location: ../login.php');
         exit;
     }
-    
 } catch (PDOException $e) {
-    $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des informations de la boutique : " . $e->getMessage(),
-        'type' => "error"
-    ];
+    $_SESSION['flash_message'] = ['text' => "Erreur : " . $e->getMessage(), 'type' => "error"];
     header('Location: ../login.php');
     exit;
 }
@@ -70,95 +55,55 @@ $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 if ($page < 1) $page = 1;
 $offset = ($page - 1) * $limit;
 
-// Compter le nombre total de stocks pour cette boutique
 try {
-    $countQuery = $pdo->prepare("
-        SELECT COUNT(*) 
-        FROM stock s 
-        WHERE s.boutique_id = ? 
-          AND s.statut = 0
-    ");
+    $countQuery = $pdo->prepare("SELECT COUNT(*) FROM stock s WHERE s.boutique_id = ? AND s.statut = 0");
     $countQuery->execute([$boutique_id]);
     $total_stocks = $countQuery->fetchColumn();
     $totalPages = ceil($total_stocks / $limit);
     if ($totalPages < 1) $totalPages = 1;
     if ($page > $totalPages && $totalPages > 0) $page = $totalPages;
 
-    // Requête paginée avec jointures
     $query = $pdo->prepare("
-        SELECT s.*, 
-               p.designation as produit_designation,
-               p.umProduit as produit_unite,
-               p.description as produit_description
-        FROM stock s 
-        JOIN produits p ON s.produit_matricule = p.matricule 
-        WHERE s.boutique_id = :boutique_id 
-          AND s.statut = 0
-        ORDER BY 
-            CASE 
-                WHEN s.quantite <= s.seuil_alerte_stock THEN 1
-                ELSE 2
-            END,
-            s.date_creation DESC
+        SELECT s.*, p.designation as produit_designation, p.umProduit as produit_unite, p.description as produit_description
+        FROM stock s JOIN produits p ON s.produit_matricule = p.matricule 
+        WHERE s.boutique_id = :bid AND s.statut = 0
+        ORDER BY CASE WHEN s.quantite <= s.seuil_alerte_stock THEN 1 ELSE 2 END, s.date_creation DESC
         LIMIT :limit OFFSET :offset
     ");
-    $query->bindValue(':boutique_id', $boutique_id, PDO::PARAM_INT);
+    $query->bindValue(':bid', $boutique_id, PDO::PARAM_INT);
     $query->bindValue(':limit', $limit, PDO::PARAM_INT);
     $query->bindValue(':offset', $offset, PDO::PARAM_INT);
     $query->execute();
     $stocks = $query->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Statistiques pour cette boutique
+
     $queryStats = $pdo->prepare("
-        SELECT 
-            COUNT(DISTINCT s.produit_matricule) as produits_differents,
-            SUM(s.quantite) as quantite_totale,
-            SUM(s.quantite * s.prix) as valeur_totale,
-            COUNT(CASE WHEN s.quantite <= s.seuil_alerte_stock THEN 1 END) as produits_faible_stock
-        FROM stock s 
-        WHERE s.boutique_id = ? 
-          AND s.statut = 0
+        SELECT COUNT(DISTINCT s.produit_matricule) as produits_diff, SUM(s.quantite) as qt_totale,
+               SUM(s.quantite * s.prix) as val_totale, COUNT(CASE WHEN s.quantite <= s.seuil_alerte_stock THEN 1 END) as faible
+        FROM stock s WHERE s.boutique_id = ? AND s.statut = 0
     ");
     $queryStats->execute([$boutique_id]);
     $stats = $queryStats->fetch(PDO::FETCH_ASSOC);
-    
-    $produits_differents = $stats['produits_differents'] ?? 0;
-    $quantite_totale = $stats['quantite_totale'] ?? 0;
-    $valeur_totale = $stats['valeur_totale'] ?? 0;
-    $produits_faible_stock = $stats['produits_faible_stock'] ?? 0;
-    
-    // Statistiques par type d'unité
+    $produits_differents = $stats['produits_diff'] ?? 0;
+    $quantite_totale = $stats['qt_totale'] ?? 0;
+    $valeur_totale = $stats['val_totale'] ?? 0;
+    $produits_faible_stock = $stats['faible'] ?? 0;
+
     $queryStatsUnite = $pdo->prepare("
-        SELECT 
-            p.umProduit,
-            COUNT(DISTINCT s.produit_matricule) as nombre_produits,
-            SUM(s.quantite) as quantite_totale,
-            SUM(s.quantite * s.prix) as valeur_totale
-        FROM stock s 
-        JOIN produits p ON s.produit_matricule = p.matricule 
-        WHERE s.boutique_id = ? 
-          AND s.statut = 0
-        GROUP BY p.umProduit
+        SELECT p.umProduit, COUNT(DISTINCT s.produit_matricule) as nb, SUM(s.quantite) as qt, SUM(s.quantite * s.prix) as val
+        FROM stock s JOIN produits p ON s.produit_matricule = p.matricule 
+        WHERE s.boutique_id = ? AND s.statut = 0 GROUP BY p.umProduit
     ");
     $queryStatsUnite->execute([$boutique_id]);
     $statsUnite = $queryStatsUnite->fetchAll(PDO::FETCH_ASSOC);
-    
     $stats_metres = [];
     $stats_pieces = [];
-    
-    foreach ($statsUnite as $stat) {
-        if ($stat['umProduit'] == 'metres') {
-            $stats_metres = $stat;
-        } else {
-            $stats_pieces = $stat;
-        }
+    foreach ($statsUnite as $s) {
+        if ($s['umProduit'] == 'metres') $stats_metres = $s;
+        else $stats_pieces = $s;
     }
-
 } catch (PDOException $e) {
-    $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des stocks: " . $e->getMessage(),
-        'type' => "error"
-    ];
+    $message = "Erreur : " . $e->getMessage();
+    $message_type = 'error';
     $produits_differents = 0;
     $quantite_totale = 0;
     $valeur_totale = 0;
@@ -169,1402 +114,688 @@ try {
     $stats_metres = [];
     $stats_pieces = [];
 }
+
+// Produits pour le modal
+try {
+    $queryProduits = $pdo->prepare("SELECT matricule, designation, umProduit FROM produits WHERE statut = 0 AND actif = 1 ORDER BY designation");
+    $queryProduits->execute();
+    $produits = $queryProduits->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $produits = [];
+}
 ?>
 
 <!DOCTYPE html>
-<html lang="fr" class="h-full">
+<html lang="fr" class="scroll-smooth">
+
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <title>Stocks - <?= htmlspecialchars($boutique_info['nom']) ?> - NGS (New Grace Service)</title>
-    
+    <title>Stocks - <?= htmlspecialchars($boutique_info['nom']) ?> - NGS</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
 
     <style>
         :root {
-            --primary: #0A2540;
-            --secondary: #7B61FF;
-            --accent: #00D4AA;
-            --light: #F8FAFC;
-            --dark: #1E293B;
+            --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
+            --glass-bg: rgba(255, 255, 255, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.3);
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --text-primary: #1a1a2e;
+            --text-secondary: #4a4a6a;
+            --text-muted: #6b7280;
+            --accent-gradient: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            --input-bg: rgba(255, 255, 255, 0.9);
+            --input-border: rgba(0, 0, 0, 0.1);
+            --divider: rgba(0, 0, 0, 0.06);
+        }
+
+        .dark {
+            --sidebar-bg: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+            --glass-bg: rgba(15, 23, 42, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+            --input-bg: rgba(30, 41, 59, 0.8);
+            --input-border: rgba(255, 255, 255, 0.1);
+            --divider: rgba(255, 255, 255, 0.06);
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F8FAFC;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 50%, #f5f3ff 100%);
+            color: var(--text-primary);
+            transition: background 0.4s ease, color 0.4s ease;
         }
 
-        .font-display {
-            font-family: 'Outfit', sans-serif;
-        }
-
-        .gradient-bg {
-            background: linear-gradient(135deg, #0A2540 0%, #1E3A5F 100%);
-        }
-
-        .gradient-accent {
-            background: linear-gradient(90deg, #7B61FF 0%, #00D4AA 100%);
-        }
-
-        .gradient-blue-btn {
-            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%); 
-            color: white; 
-            transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
-        }
-
-        .gradient-blue-btn:hover {
-            opacity: 0.9;
-            transform: translateY(-2px);
-        }
-
-        .gradient-green-btn {
-            background: linear-gradient(90deg, #10B981 0%, #059669 100%); 
-            color: white; 
-            transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
-        }
-
-        .gradient-green-btn:hover {
-            opacity: 0.9;
-            transform: translateY(-2px);
-        }
-
-        .shadow-soft {
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
-        }
-
-        .hover-lift {
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .hover-lift:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
-        }
-
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.show {
-            display: flex;
-        }
-
-        .modal-content {
-            background-color: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .slide-down {
-            animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .status-active {
-            background-color: #D1FAE5;
-            color: #065F46;
-        }
-
-        .status-inactive {
-            background-color: #FEE2E2;
-            color: #991B1B;
+        .dark body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
         }
 
         .sidebar {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
+            background: var(--sidebar-bg);
         }
 
-        .sidebar-header, .sidebar-profile, .sidebar-footer {
-            flex-shrink: 0;
-        }
-
-        .sidebar-nav {
-            flex: 1;
-            overflow-y: auto;
-            overflow-x: hidden;
-            min-height: 0;
-        }
-
-        .sidebar-nav::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .sidebar-nav::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-        }
-
-        .sidebar-nav::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 10px;
-            transition: background 0.3s ease;
-        }
-
-        .sidebar-nav::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-
-        .sidebar-nav {
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
-        }
-
-        .nav-link {
-            position: relative;
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
             transition: all 0.3s ease;
         }
 
+        .premium-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.25rem;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+            transition: all 0.3s ease;
+        }
+
+        .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        }
+
+        .dark .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .input-glass {
+            background: var(--input-bg);
+            border: 2px solid var(--input-border);
+            color: var(--text-primary);
+            border-radius: 0.75rem;
+            transition: all 0.3s ease;
+        }
+
+        .input-glass:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+            outline: none;
+        }
+
+        .btn-glass {
+            background: var(--accent-gradient);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(30, 58, 138, 0.2);
+        }
+
+        .btn-glass:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(30, 58, 138, 0.35);
+        }
+
+        .btn-green {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);
+        }
+
+        .btn-green:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
+        }
+
+        .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            transition: all 0.3s ease;
+            border-radius: 0.75rem;
+        }
+
         .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
             padding-left: 1.25rem;
-            background: rgba(255, 255, 255, 0.08);
         }
 
         .nav-link.active {
             background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border-left: 3px solid #60a5fa;
         }
 
-        .nav-link.active::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 4px;
-            height: 60%;
-            background: var(--accent);
-            border-radius: 0 4px 4px 0;
-        }
-
-        .main-content {
-            height: 100vh;
-            overflow-y: auto;
-        }
-
-        html {
-            scroll-behavior: smooth;
-        }
-
-        .mobile-menu-btn {
-            transition: transform 0.3s ease;
-        }
-
-        .mobile-menu-btn.active {
-            transform: rotate(90deg);
-        }
-
-        .fade-in-row {
-            animation: fadeInRow 0.5s ease-out forwards;
-            opacity: 0;
-        }
-
-        @keyframes fadeInRow {
-            to {
-                opacity: 1;
-            }
-        }
-
-        .stats-card {
+        .stat-card {
             transition: all 0.3s ease;
         }
 
-        .stats-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
         }
 
-        .loading-spinner {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .notification-badge {
-            position: absolute;
-            top: 0;
-            right: 0;
-            transform: translate(50%, -50%);
-            background: var(--accent);
-            color: white;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 10px;
-            font-weight: bold;
-        }
-
-        .action-btn {
-            transition: all 0.2s ease;
-        }
-
-        .action-btn:hover {
-            transform: translateY(-1px);
-        }
-
-        .table-container {
-            overflow-x: auto;
-        }
-
-        .stock-row:hover {
-            background-color: #f9fafb;
-        }
-
-        .seuil-alerte {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 8px;
+        .theme-toggle {
+            width: 44px;
+            height: 24px;
+            background: #cbd5e1;
             border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s ease;
         }
 
-        .seuil-faible {
-            background-color: #fef3c7;
-            color: #92400e;
+        .dark .theme-toggle {
+            background: #334155;
         }
 
-        .seuil-ok {
-            background-color: #d1fae5;
+        .theme-toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+
+        .dark .theme-toggle::after {
+            transform: translateX(20px);
+            background: #fbbf24;
+        }
+
+        .modal-overlay {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        .modal-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.5rem;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+        }
+
+        .badge-success {
+            background: #d1fae5;
             color: #065f46;
         }
 
-        .badge-mouvement {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 500;
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
         }
 
-        .badge-approvisionnement {
-            background-color: #dbeafe;
-            color: #1e40af;
+        .dark .badge-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
         }
 
-        .badge-transfert {
-            background-color: #f3e8ff;
-            color: #7c3aed;
+        .dark .badge-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
         }
 
-        .prix-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
-            background-color: #e0f2fe;
-            color: #0369a1;
-        }
-
-        .valeur-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            background-color: #dcfce7;
-            color: #166534;
-        }
-        
-        .badge-unite {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 500;
-        }
-        
-        .badge-metres {
-            background-color: #E0F2FE;
-            color: #0369A1;
-            border: 1px solid #BAE6FD;
-        }
-        
-        .badge-pieces {
-            background-color: #DCFCE7;
-            color: #166534;
-            border: 1px solid #BBF7D0;
-        }
-        
-        .input-with-unite {
-            position: relative;
-        }
-        
-        .input-with-unite input {
-            padding-right: 60px;
-        }
-        
-        .unite-label {
-            position: absolute;
-            right: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: #f3f4f6;
-            padding: 4px 8px;
+        *:focus-visible {
+            outline: 2px solid #60a5fa;
+            outline-offset: 2px;
             border-radius: 6px;
-            font-size: 12px;
-            color: #6b7280;
-            pointer-events: none;
-        }
-        
-        .info-box {
-            background-color: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 12px;
-        }
-        
-        .info-box p {
-            margin: 0;
-            font-size: 12px;
-            color: #64748b;
         }
 
-        .boutique-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        .loading-spinner-small {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-
-        button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        input[type="radio"]:checked + div {
-            border-color: #3b82f6;
-            background-color: #eff6ff;
-        }
-
-        input[type="radio"]:checked + div .font-medium {
-            color: #1e40af;
+        .animate-fade-in-up {
+            animation: fadeInUp 0.4s ease-out forwards;
         }
 
         @media (max-width: 768px) {
-            .modal-content {
-                width: 95%;
-                margin: 10px;
+            .sidebar {
+                transform: translateX(-100%);
             }
-            
-            .action-buttons {
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-            
-            .action-btn {
-                width: 100%;
-                justify-content: center;
-            }
-            
-            .nav-link {
-                padding: 0.75rem 1rem;
-            }
-            
-            .stats-grid {
-                grid-template-columns: 1fr;
+
+            .sidebar.open {
+                transform: translateX(0);
             }
         }
     </style>
 </head>
-<body class="font-inter min-h-screen bg-gray-50">
-    <button id="mobileMenuButton" class="mobile-menu-btn md:hidden fixed top-4 left-4 z-50 p-3 text-white bg-gradient-to-r from-blue-600 to-purple-600 rounded-full shadow-lg hover:shadow-xl transition-shadow">
-        <i class="fas fa-bars"></i>
-    </button>
+
+<body class="h-screen flex overflow-hidden">
 
     <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 
-    <div class="flex h-screen">
-        <aside id="sidebar" class="sidebar w-64 gradient-bg text-white flex flex-col fixed inset-y-0 left-0 transform -translate-x-full md:sticky md:top-0 md:h-full md:translate-x-0 transition-transform duration-300 ease-in-out z-50 md:z-auto">
-            <div class="sidebar-header p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center shadow-lg">
-                        <span class="font-bold text-white text-lg font-display">NGS</span>
-                    </div>
-                    <div>
-                        <h1 class="font-display text-xl font-bold">NGS</h1>
-                        <p class="text-xs text-gray-300">New Grace Service - Dashboard Boutique</p>
-                    </div>
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="sidebar w-64 flex flex-col fixed md:sticky top-0 h-full z-50 transition-transform duration-300 text-white">
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg"><span class="font-bold text-white">NGS</span></div>
+                <div>
+                    <h2 class="font-bold text-sm">NGS Pro</h2>
+                    <p class="text-[10px] text-gray-400">Dashboard Boutique</p>
                 </div>
             </div>
-
-            <div class="sidebar-profile p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 rounded-full bg-blue-500/20 border-2 border-blue-500/30 flex items-center justify-center relative">
-                        <i class="fas fa-store text-blue-500 text-lg"></i>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-semibold truncate"><?= htmlspecialchars($boutique_info['nom']) ?></h3>
-                        <p class="text-sm text-gray-300 truncate"><?= htmlspecialchars($boutique_info['email'] ?? '') ?></p>
-                    </div>
-                </div>
-            </div>
-
-            <nav class="sidebar-nav p-4 space-y-1">
-                <a href="dashboard_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-line w-5 text-gray-300"></i>
-                    <span>Tableau de bord</span>
-                </a>
-                <a href="stock_boutique.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
-                    <i class="fas fa-warehouse w-5 text-white"></i>
-                    <span>Mes stocks</span>
-                    <?php if ($total_stocks > 0): ?>
-                        <span class="notification-badge"><?= $total_stocks ?></span>
-                    <?php endif; ?>
-                </a>
-                <a href="ventes_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-shopping-cart w-5 text-gray-300"></i>
-                    <span>Ventes</span>
-                </a>
-                <a href="paiements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-money-bill-wave w-5 text-gray-300"></i>
-                    <span>Paiements</span>
-                </a>
-                <a href="transferts-boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-truck-loading w-5 text-gray-300"></i>
-                    <span>Transferts</span>
-                </a>
-                <a href="mouvements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-exchange-alt w-5 text-gray-300"></i>
-                    <span>Mouvements Caisse</span>
-                </a>
-                <a href="rapports_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
-                    <span>Rapports</span>
-                </a>
-            </nav>
-
-            <div class="sidebar-footer p-4 border-t border-white/10">
-                <a href="../models/logout.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-red-500/10 text-red-300 hover:text-red-200 transition-colors">
-                    <i class="fas fa-sign-out-alt w-5"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </aside>
-
-        <div class="main-content flex-1 overflow-y-auto">
-            <header class="boutique-header p-4 md:p-6 sticky top-0 z-30 shadow-lg">
-                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <div class="flex items-center space-x-3">
-                            <div>
-                                <h1 class="text-xl md:text-2xl font-bold text-white">Mes stocks - <?= htmlspecialchars($boutique_info['nom']) ?></h1>
-                                <p class="text-gray-200 text-sm md:text-base">New Grace Service - Gestion des stocks de votre boutique</p>
-                            </div>
-                        </div>
-                        
-                        <div class="mt-3 flex flex-wrap items-center gap-3">
-                            <div class="flex items-center space-x-2 text-sm text-gray-200">
-                                <i class="fas fa-envelope"></i>
-                                <span><?= htmlspecialchars($boutique_info['email'] ?? 'Non spécifié') ?></span>
-                            </div>
-                            <div class="flex items-center space-x-2 text-sm text-gray-200">
-                                <i class="fas fa-calendar-alt"></i>
-                                <span>Créée le <?= date('d/m/Y', strtotime($boutique_info['date_creation'])) ?></span>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <span class="status-badge <?= $boutique_info['actif'] ? 'status-active' : 'status-inactive' ?>">
-                                    <i class="fas fa-<?= $boutique_info['actif'] ? 'check-circle' : 'times-circle' ?> mr-1"></i>
-                                    <?= $boutique_info['actif'] ? 'Active' : 'Inactive' ?>
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex items-center space-x-4">
-                        <button onclick="openEnregistrerStockModal()" 
-                                class="px-4 py-2 gradient-green-btn text-white rounded-lg flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
-                            <i class="fas fa-plus-circle"></i>
-                            <span>Enregistrer un stock</span>
-                        </button>
-                        <button onclick="refreshPage()" 
-                                class="px-4 py-2 bg-white/20 text-white rounded-lg hover:bg-white/30 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
-                            <i class="fas fa-sync-alt"></i>
-                            <span>Actualiser</span>
-                        </button>
-                        <?php if ($produits_faible_stock > 0): ?>
-                            <div class="relative">
-                                <span class="px-4 py-2 bg-yellow-500 text-white rounded-lg flex items-center space-x-2 shadow-md">
-                                    <i class="fas fa-exclamation-triangle"></i>
-                                    <span><?= $produits_faible_stock ?> alerte(s)</span>
-                                </span>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </header>
-
-            <main class="p-4 md:p-6">
-                <?php if ($message): ?>
-                    <div class="mb-6 fade-in relative z-10 animate-fade-in">
-                        <div class="
-                            <?php if ($message_type === 'success'): ?>bg-green-50 text-green-700 border border-green-200
-                            <?php elseif ($message_type === 'error'): ?>bg-red-50 text-red-700 border border-red-200
-                            <?php elseif ($message_type === 'warning'): ?>bg-yellow-50 text-yellow-700 border border-yellow-200
-                            <?php else: ?>bg-blue-50 text-blue-700 border border-blue-200<?php endif; ?>
-                            rounded-xl p-4 flex items-center justify-between shadow-soft">
-                            <div class="flex items-center space-x-3">
-                                <?php if ($message_type === 'success'): ?>
-                                    <i class="fas fa-check-circle text-green-600 text-lg"></i>
-                                <?php elseif ($message_type === 'error'): ?>
-                                    <i class="fas fa-exclamation-circle text-red-600 text-lg"></i>
-                                <?php elseif ($message_type === 'warning'): ?>
-                                    <i class="fas fa-exclamation-triangle text-yellow-600 text-lg"></i>
-                                <?php else: ?>
-                                    <i class="fas fa-info-circle text-blue-600 text-lg"></i>
-                                <?php endif; ?>
-                                <span><?= htmlspecialchars($message) ?></span>
-                            </div>
-                            <button onclick="this.parentElement.parentElement.style.display='none'" class="text-gray-400 hover:text-gray-600 transition-colors">
-                                <i class="fas fa-times text-lg"></i>
-                            </button>
-                        </div>
-                    </div>
-                <?php endif; ?>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8 stats-grid">
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-blue-500 animate-fade-in">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                                <i class="fas fa-boxes text-blue-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-blue-600">Total</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_stocks ?></h3>
-                        <p class="text-gray-600">Stocks enregistrés</p>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-emerald-500 animate-fade-in" style="animation-delay: 0.1s">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
-                                <i class="fas fa-box-open text-emerald-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-emerald-600">Produits</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $produits_differents ?></h3>
-                        <p class="text-gray-600">Types de produits</p>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-cyan-500 animate-fade-in" style="animation-delay: 0.2s">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-cyan-100 flex items-center justify-center">
-                                <i class="fas fa-weight-hanging text-cyan-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-cyan-600">Quantité totale</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($quantite_totale, 3) ?></h3>
-                        <p class="text-gray-600">Unités en stock</p>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-purple-500 animate-fade-in" style="animation-delay: 0.3s">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                                <i class="fas fa-chart-line text-purple-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-purple-600">Valeur stock</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($valeur_totale, 2) ?> $</h3>
-                        <p class="text-gray-600">Valeur totale</p>
-                    </div>
-                </div>
-
-                <!-- Statistiques détaillées par type d'unité -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 animate-fade-in" style="animation-delay: 0.4s">
-                    <!-- Statistiques pour les mètres (rideaux) -->
-                    <?php if (!empty($stats_metres)): ?>
-                    <div class="bg-white rounded-2xl shadow-soft p-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                                    <i class="fas fa-ruler-combined text-blue-600"></i>
-                                </div>
-                                <div>
-                                    <h3 class="font-bold text-gray-900">Rideaux (mètres)</h3>
-                                    <p class="text-sm text-gray-600">Statistiques pour les produits vendus au mètre</p>
-                                </div>
-                            </div>
-                            <span class="badge-unite badge-metres">
-                                <i class="fas fa-ruler-combined mr-1"></i>
-                                Mètres
-                            </span>
-                        </div>
-                        
-                        <div class="space-y-3">
-                            <div class="flex justify-between items-center">
-                                <span class="text-gray-600">Nombre de produits:</span>
-                                <span class="font-bold"><?= $stats_metres['nombre_produits'] ?? 0 ?></span>
-                            </div>
-                            <div class="flex justify-between items-center">
-                                <span class="text-gray-600">Quantité totale:</span>
-                                <span class="font-bold"><?= number_format($stats_metres['quantite_totale'] ?? 0, 3) ?> m</span>
-                            </div>
-                            <div class="flex justify-between items-center">
-                                <span class="text-gray-600">Valeur totale:</span>
-                                <span class="font-bold text-green-600"><?= number_format($stats_metres['valeur_totale'] ?? 0, 2) ?> $</span>
-                            </div>
-                        </div>
-                    </div>
-                    <?php endif; ?>
-
-                    <!-- Statistiques pour les pièces -->
-                    <?php if (!empty($stats_pieces)): ?>
-                    <div class="bg-white rounded-2xl shadow-soft p-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-                                    <i class="fas fa-cube text-emerald-600"></i>
-                                </div>
-                                <div>
-                                    <h3 class="font-bold text-gray-900">Produits (pièces)</h3>
-                                    <p class="text-sm text-gray-600">Statistiques pour les produits vendus à la pièce</p>
-                                </div>
-                            </div>
-                            <span class="badge-unite badge-pieces">
-                                <i class="fas fa-cube mr-1"></i>
-                                Pièces
-                            </span>
-                        </div>
-                        
-                        <div class="space-y-3">
-                            <div class="flex justify-between items-center">
-                                <span class="text-gray-600">Nombre de produits:</span>
-                                <span class="font-bold"><?= $stats_pieces['nombre_produits'] ?? 0 ?></span>
-                            </div>
-                            <div class="flex justify-between items-center">
-                                <span class="text-gray-600">Quantité totale:</span>
-                                <span class="font-bold"><?= number_format($stats_pieces['quantite_totale'] ?? 0, 3) ?> pce</span>
-                            </div>
-                            <div class="flex justify-between items-center">
-                                <span class="text-gray-600">Valeur totale:</span>
-                                <span class="font-bold text-green-600"><?= number_format($stats_pieces['valeur_totale'] ?? 0, 2) ?> $</span>
-                            </div>
-                        </div>
-                    </div>
-                    <?php endif; ?>
-                </div>
-
-                <!-- Alertes stock faible -->
-                <?php if ($produits_faible_stock > 0): ?>
-                    <div class="mb-6 animate-fade-in" style="animation-delay: 0.5s">
-                        <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 md:p-6">
-                            <div class="flex items-start space-x-3">
-                                <i class="fas fa-exclamation-triangle text-yellow-600 text-xl mt-1"></i>
-                                <div class="flex-1">
-                                    <h3 class="font-bold text-yellow-800 mb-2">Alertes stock faible</h3>
-                                    <p class="text-yellow-700 mb-3">
-                                        <span class="font-bold"><?= $produits_faible_stock ?></span> produit(s) sont en dessous du seuil d'alerte.
-                                        Pensez à réapprovisionner ces produits pour éviter les ruptures de stock.
-                                    </p>
-                                    <div class="flex items-center space-x-2 text-sm text-yellow-600">
-                                        <i class="fas fa-lightbulb"></i>
-                                        <span>Les produits avec stock faible sont affichés en premier dans le tableau ci-dessous.</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                <?php endif; ?>
-
-                <div class="bg-white rounded-2xl shadow-soft p-6 mb-6 animate-fade-in" style="animation-delay: 0.6s">
-                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                        <div class="relative flex-1 max-w-lg">
-                            <input type="text"
-                                id="searchInput"
-                                placeholder="Rechercher par produit, matricule ou mouvement..."
-                                class="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-secondary focus:border-secondary transition-all shadow-sm">
-                            <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-                        </div>
-
-                        <div class="flex items-center space-x-4">
-                            <div class="text-sm text-gray-600 hidden md:flex items-center space-x-2">
-                                <i class="fas fa-info-circle text-blue-500"></i>
-                                <span>Page <?= $page ?> sur <?= $totalPages ?></span>
-                            </div>
-                            <button onclick="refreshPage()" class="p-2 text-gray-600 hover:text-blue-600 transition-colors" title="Actualiser">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in" style="animation-delay: 0.7s">
-                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                        <div class="flex flex-col md:flex-row md:items-center md:justify-between">
-                            <h2 class="text-lg font-semibold text-gray-900 mb-2 md:mb-0">
-                                Détail des stocks - <?= htmlspecialchars($boutique_info['nom']) ?>
-                            </h2>
-                            <div class="flex items-center space-x-2">
-                                <span class="text-sm text-gray-600">
-                                    <?= $produits_faible_stock ?> produit(s) en stock faible
-                                </span>
-                                <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="table-container">
-                        <table class="w-full min-w-[1000px]" id="stocksTable">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type mouvement</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantité</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix unitaire</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valeur</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Seuil d'alerte</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200" id="tableBody">
-                                <?php if (!empty($stocks)): ?>
-                                    <?php foreach ($stocks as $index => $stock): ?>
-                                        <?php 
-                                        // Déterminer la classe du seuil d'alerte
-                                        $seuilClass = $stock['quantite'] <= $stock['seuil_alerte_stock'] ? 'seuil-faible' : 'seuil-ok';
-                                        $seuilText = $stock['quantite'] <= $stock['seuil_alerte_stock'] ? 'Faible' : 'OK';
-                                        
-                                        // Déterminer le type de produit
-                                        $uniteClass = $stock['produit_unite'] == 'metres' ? 'badge-metres' : 'badge-pieces';
-                                        $uniteText = $stock['produit_unite'] == 'metres' ? 'mètres' : 'pièces';
-                                        $uniteIcon = $stock['produit_unite'] == 'metres' ? 'fas fa-ruler-combined' : 'fas fa-cube';
-                                        
-                                        // Déterminer le type de mouvement
-                                        $mouvementClass = $stock['type_mouvement'] == 'transfert' ? 'badge-transfert' : 'badge-approvisionnement';
-                                        $mouvementText = $stock['type_mouvement'] == 'transfert' ? 'Transfert' : 'Approvisionnement';
-                                        $mouvementIcon = $stock['type_mouvement'] == 'transfert' ? 'fas fa-exchange-alt' : 'fas fa-truck-loading';
-                                        
-                                        // Calculer la valeur
-                                        $valeur = $stock['quantite'] * $stock['prix'];
-                                        ?>
-                                        <tr class="stock-row hover:bg-gray-50 transition-colors fade-in-row <?= $stock['quantite'] <= $stock['seuil_alerte_stock'] ? 'bg-yellow-50' : '' ?>"
-                                            data-stock-id="<?= htmlspecialchars($stock['id']) ?>"
-                                            data-produit-designation="<?= htmlspecialchars(strtolower($stock['produit_designation'])) ?>"
-                                            data-produit-matricule="<?= htmlspecialchars(strtolower($stock['produit_matricule'])) ?>"
-                                            data-type-mouvement="<?= htmlspecialchars(strtolower($stock['type_mouvement'])) ?>"
-                                            data-unite="<?= htmlspecialchars(strtolower($stock['produit_unite'])) ?>"
-                                            style="animation-delay: <?= $index * 0.05 ?>s">
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                <div class="flex items-center">
-                                                    <span class="font-mono font-bold">#<?= htmlspecialchars($stock['id']) ?></span>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                <div>
-                                                    <div class="flex items-center">
-                                                        <span class="font-medium"><?= htmlspecialchars($stock['produit_designation']) ?></span>
-                                                        <span class="badge-unite ml-2 <?= $uniteClass ?>">
-                                                            <i class="<?= $uniteIcon ?> mr-1 text-xs"></i>
-                                                            <?= $uniteText ?>
-                                                        </span>
-                                                    </div>
-                                                    <div class="text-xs text-gray-500 font-mono mt-1">
-                                                        <?= htmlspecialchars($stock['produit_matricule']) ?>
-                                                    </div>
-                                                    <?php if ($stock['produit_description']): ?>
-                                                        <div class="text-xs text-gray-600 mt-1">
-                                                            <?= htmlspecialchars(substr($stock['produit_description'], 0, 50)) ?>
-                                                            <?php if (strlen($stock['produit_description']) > 50): ?>...<?php endif; ?>
-                                                        </div>
-                                                    <?php endif; ?>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                <span class="badge-mouvement <?= $mouvementClass ?>">
-                                                    <i class="<?= $mouvementIcon ?> mr-1"></i>
-                                                    <?= $mouvementText ?>
-                                                </span>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                <div class="flex items-center">
-                                                    <span class="font-bold <?= $stock['quantite'] <= $stock['seuil_alerte_stock'] ? 'text-yellow-700' : '' ?>">
-                                                        <?= number_format($stock['quantite'], 3) ?>
-                                                    </span>
-                                                    <span class="text-xs text-gray-500 ml-1">
-                                                        <?= $uniteText ?>
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                <div class="flex items-center">
-                                                    <span class="prix-badge">
-                                                        <i class="fas fa-tag mr-1"></i>
-                                                        <?= number_format($stock['prix'], 2) ?> $
-                                                    </span>
-                                                    <span class="text-xs text-gray-500 ml-1">
-                                                        /<?= $uniteText ?>
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                <div class="flex items-center">
-                                                    <span class="valeur-badge">
-                                                        <i class="fas fa-dollar-sign mr-1"></i>
-                                                        <?= number_format($valeur, 2) ?> $
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                <div class="flex items-center">
-                                                    <span class="seuil-alerte <?= $seuilClass ?>">
-                                                        <i class="fas fa-<?= $stock['quantite'] <= $stock['seuil_alerte_stock'] ? 'exclamation-triangle' : 'check-circle' ?> mr-1"></i>
-                                                        <?= $seuilText ?> (<?= $stock['seuil_alerte_stock'] ?>)
-                                                    </span>
-                                                    <span class="text-xs text-gray-500 ml-1">
-                                                        <?= $uniteText ?>
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <?= date('d/m/Y H:i', strtotime($stock['date_creation'])) ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="8" class="px-6 py-8 text-center">
-                                            <div class="text-gray-500">
-                                                <i class="fas fa-inbox text-4xl mb-4"></i>
-                                                <p class="text-lg">Aucun stock enregistré pour votre boutique</p>
-                                                <p class="text-sm mt-2">
-                                                    Votre boutique ne possède actuellement aucun produit en stock.
-                                                    Vous pouvez en ajouter en cliquant sur le bouton "Enregistrer un stock".
-                                                </p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div id="noResults" class="hidden text-center py-12">
-                        <div class="bg-gray-50 rounded-2xl p-8 max-w-md mx-auto shadow-soft">
-                            <i class="fas fa-search text-6xl text-gray-400 mb-4"></i>
-                            <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
-                            <p class="text-gray-600">Aucun stock ne correspond à votre recherche</p>
-                        </div>
-                    </div>
-
-                    <?php if ($totalPages > 1): ?>
-                        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50">
-                            <div class="flex items-center justify-between">
-                                <div class="text-sm text-gray-700 hidden sm:block">
-                                    Affichage de <span class="font-medium"><?= ($page - 1) * $limit + 1 ?></span> à
-                                    <span class="font-medium"><?= min($page * $limit, $total_stocks) ?></span> sur
-                                    <span class="font-medium"><?= $total_stocks ?></span> stocks
-                                </div>
-
-                                <div class="flex items-center space-x-2 mx-auto sm:mx-0">
-                                    <a href="?page=<?= max(1, $page - 1) ?>"
-                                        class="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors <?= $page <= 1 ? 'opacity-50 pointer-events-none' : '' ?>">
-                                        <i class="fas fa-chevron-left"></i>
-                                    </a>
-
-                                    <?php
-                                    $startPage = max(1, $page - 1);
-                                    $endPage = min($totalPages, $page + 1);
-
-                                    for ($i = $startPage; $i <= $endPage; $i++) {
-                                        $isActive = $i == $page;
-                                    ?>
-                                        <a href="?page=<?= $i ?>"
-                                            class="px-3 py-2 rounded-lg text-sm font-medium transition-colors <?= $isActive ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md' : 'text-gray-700 hover:bg-gray-100 border border-gray-300' ?>">
-                                            <?= $i ?>
-                                        </a>
-                                    <?php } ?>
-
-                                    <a href="?page=<?= min($totalPages, $page + 1) ?>"
-                                        class="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors <?= $page >= $totalPages ? 'opacity-50 pointer-events-none' : '' ?>">
-                                        <i class="fas fa-chevron-right"></i>
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </main>
         </div>
-    </div>
-
-    <!-- Modal pour enregistrer un stock -->
-    <div id="enregistrerStockModal" class="modal">
-        <div class="modal-content slide-down">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-6">
-                    <h3 class="text-xl font-bold text-gray-900">
-                        <i class="fas fa-box text-blue-500 mr-2"></i>
-                        Enregistrer un nouveau stock
-                    </h3>
-                    <button onclick="closeEnregistrerStockModal()" class="text-gray-400 hover:text-gray-600">
-                        <i class="fas fa-times text-lg"></i>
-                    </button>
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center"><i class="fas fa-store text-blue-400"></i></div>
+                <div class="min-w-0">
+                    <p class="font-semibold text-sm truncate"><?= htmlspecialchars($boutique_info['nom']) ?></p>
+                    <p class="text-xs text-gray-400 truncate"><?= htmlspecialchars($boutique_info['email'] ?? '') ?></p>
                 </div>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+            <a href="dashboard_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-line w-4 text-center"></i>Tableau de bord</a>
+            <a href="stock_boutique.php" class="nav-link active flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-warehouse w-4 text-center"></i>Mes stocks<?php if ($total_stocks > 0): ?><span class="ml-auto bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full"><?= $total_stocks ?></span><?php endif; ?></a>
+            <a href="ventes_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-shopping-cart w-4 text-center"></i>Ventes</a>
+            <a href="paiements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-money-bill-wave w-4 text-center"></i>Paiements</a>
+            <a href="mouvements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-exchange-alt w-4 text-center"></i>Mouvements Caisse</a>
+            <a href="transferts-boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-truck-loading w-4 text-center"></i>Transferts</a>
+            <a href="rapports_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-bar w-4 text-center"></i>Rapports</a>
+            <a href="realisations.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-images w-4 text-center"></i>Réalisations</a>
+        </nav>
+        <div class="p-3 border-t border-white/10 flex-shrink-0">
+            <div class="flex items-center justify-between px-3 py-2 mb-2">
+                <span class="text-xs text-gray-400"><i class="fas fa-moon mr-1"></i>Thème</span>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Changer le thème"></button>
+            </div>
+            <a href="../models/logout.php" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors text-sm"><i class="fas fa-sign-out-alt w-4 text-center"></i>Déconnexion</a>
+        </div>
+    </aside>
 
-                <form id="enregistrerStockForm" action="../models/traitement/enregistrer_stock.php" method="POST">
-                    <input type="hidden" name="boutique_id" value="<?= $boutique_id ?>">
-                    
-                    <div class="space-y-4">
-                        <!-- Sélection du produit -->
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">
-                                <i class="fas fa-box-open mr-2"></i>
-                                Produit *
-                            </label>
-                            <select name="produit_matricule" id="produitSelect" 
-                                    required
-                                    class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all">
-                                <option value="">Sélectionnez un produit</option>
-                                <?php
-                                try {
-                                    $queryProduits = $pdo->prepare("
-                                        SELECT matricule, designation, umProduit, description 
-                                        FROM produits 
-                                        WHERE statut = 0 AND actif = TRUE 
-                                        ORDER BY designation
-                                    ");
-                                    $queryProduits->execute();
-                                    $produits = $queryProduits->fetchAll(PDO::FETCH_ASSOC);
-                                    
-                                    foreach ($produits as $produit) {
-                                        $unite = $produit['umProduit'] == 'metres' ? 'mètres' : 'pièces';
-                                        echo '<option value="' . htmlspecialchars($produit['matricule']) . '" 
-                                                data-unite="' . $produit['umProduit'] . '"
-                                                data-designation="' . htmlspecialchars($produit['designation']) . '">';
-                                        echo htmlspecialchars($produit['designation']) . ' - ' . htmlspecialchars($produit['matricule']) . ' (' . $unite . ')';
-                                        echo '</option>';
-                                    }
-                                } catch (PDOException $e) {
-                                    echo '<option value="">Erreur de chargement des produits</option>';
-                                }
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 overflow-y-auto">
+        <header class="sticky top-0 z-30 glass border-b border-white/10">
+            <div class="flex items-center justify-between px-4 md:px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <button id="mobileMenuBtn" class="md:hidden p-2 rounded-lg hover:bg-white/10 transition-colors text-[var(--text-primary)]"><i class="fas fa-bars text-lg"></i></button>
+                    <div>
+                        <h1 class="text-lg md:text-xl font-bold text-[var(--text-primary)]">Mes stocks - <?= htmlspecialchars($boutique_info['nom']) ?></h1>
+                        <p class="text-xs text-[var(--text-muted)]"><?= htmlspecialchars($boutique_info['email'] ?? '') ?> • Créée le <?= date('d/m/Y', strtotime($boutique_info['date_creation'])) ?></p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <?php if ($produits_faible_stock > 0): ?>
+                        <span class="px-3 py-1.5 rounded-full text-xs font-medium badge-warning flex items-center gap-1.5"><i class="fas fa-exclamation-triangle"></i><?= $produits_faible_stock ?> alerte(s)</span>
+                    <?php endif; ?>
+                    <button onclick="openStockModal()" class="btn-green px-4 py-2 rounded-xl text-sm flex items-center gap-2"><i class="fas fa-plus-circle"></i><span class="hidden sm:inline">Enregistrer un stock</span></button>
+                    <button onclick="window.location.reload()" class="p-2 rounded-xl glass hover:bg-white/20 transition-all text-[var(--text-muted)]" title="Actualiser"><i class="fas fa-sync-alt text-sm"></i></button>
+                </div>
+            </div>
+        </header>
+
+        <div class="p-4 md:p-6 space-y-6">
+
+            <?php if ($message): ?>
+                <div class="animate-fade-in-up">
+                    <div class="glass rounded-2xl p-4 border-l-4 <?= $message_type === 'success' ? 'border-emerald-500' : 'border-red-500' ?>">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-<?= $message_type === 'success' ? 'check-circle text-emerald-500' : 'exclamation-circle text-red-500' ?> text-xl"></i>
+                            <span class="text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($message) ?></span>
+                            <button onclick="this.closest('.animate-fade-in-up').remove()" class="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-blue-500" style="animation-delay:0s">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-medium text-blue-600 dark:text-blue-400">Total</span>
+                        <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"><i class="fas fa-boxes text-blue-600 dark:text-blue-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $total_stocks ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Stocks enregistrés</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-emerald-500" style="animation-delay:0.1s">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Produits</span>
+                        <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><i class="fas fa-box-open text-emerald-600 dark:text-emerald-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $produits_differents ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Types de produits</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-cyan-500" style="animation-delay:0.2s">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-medium text-cyan-600 dark:text-cyan-400">Quantité</span>
+                        <div class="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-900/30 flex items-center justify-center"><i class="fas fa-weight-hanging text-cyan-600 dark:text-cyan-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= number_format($quantite_totale, 3) ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Unités en stock</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-purple-500" style="animation-delay:0.3s">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-medium text-purple-600 dark:text-purple-400">Valeur</span>
+                        <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center"><i class="fas fa-chart-line text-purple-600 dark:text-purple-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= number_format($valeur_totale, 2) ?> $</p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Valeur totale</p>
+                </div>
+            </div>
+
+            <!-- Stats par unité -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in-up" style="animation-delay:0.15s">
+                <?php if (!empty($stats_metres)): ?>
+                    <div class="premium-card p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2"><i class="fas fa-ruler-combined text-blue-500"></i><span class="font-bold text-sm text-[var(--text-primary)]">Rideaux (mètres)</span></div>
+                            <span class="px-2 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">Mètres</span>
+                        </div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between"><span class="text-[var(--text-muted)]">Produits :</span><span class="font-medium text-[var(--text-primary)]"><?= $stats_metres['nb'] ?? 0 ?></span></div>
+                            <div class="flex justify-between"><span class="text-[var(--text-muted)]">Quantité :</span><span class="font-medium text-[var(--text-primary)]"><?= number_format($stats_metres['qt'] ?? 0, 3) ?> m</span></div>
+                            <div class="flex justify-between"><span class="text-[var(--text-muted)]">Valeur :</span><span class="font-bold text-emerald-600 dark:text-emerald-400"><?= number_format($stats_metres['val'] ?? 0, 2) ?> $</span></div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                <?php if (!empty($stats_pieces)): ?>
+                    <div class="premium-card p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2"><i class="fas fa-cube text-emerald-500"></i><span class="font-bold text-sm text-[var(--text-primary)]">Produits (pièces)</span></div>
+                            <span class="px-2 py-0.5 rounded-full text-xs bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400">Pièces</span>
+                        </div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between"><span class="text-[var(--text-muted)]">Produits :</span><span class="font-medium text-[var(--text-primary)]"><?= $stats_pieces['nb'] ?? 0 ?></span></div>
+                            <div class="flex justify-between"><span class="text-[var(--text-muted)]">Quantité :</span><span class="font-medium text-[var(--text-primary)]"><?= number_format($stats_pieces['qt'] ?? 0, 3) ?> pce</span></div>
+                            <div class="flex justify-between"><span class="text-[var(--text-muted)]">Valeur :</span><span class="font-bold text-emerald-600 dark:text-emerald-400"><?= number_format($stats_pieces['val'] ?? 0, 2) ?> $</span></div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- Alerte stock faible -->
+            <?php if ($produits_faible_stock > 0): ?>
+                <div class="animate-fade-in-up" style="animation-delay:0.2s">
+                    <div class="glass rounded-2xl p-4 border-l-4 border-amber-500">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-exclamation-triangle text-amber-500 text-xl"></i>
+                            <div>
+                                <p class="font-bold text-sm text-[var(--text-primary)]"><?= $produits_faible_stock ?> produit(s) en stock faible</p>
+                                <p class="text-xs text-[var(--text-muted)]">Pensez à réapprovisionner ces produits.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Recherche -->
+            <div class="premium-card p-4 animate-fade-in-up" style="animation-delay:0.25s">
+                <div class="flex items-center gap-3">
+                    <div class="relative flex-1 max-w-md">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"></i>
+                        <input type="text" id="searchInput" placeholder="Rechercher par produit, matricule..." class="w-full input-glass pl-10 pr-4 py-2.5 text-sm">
+                    </div>
+                    <span class="text-xs text-[var(--text-muted)] hidden sm:block">Page <?= $page ?>/<?= $totalPages ?></span>
+                </div>
+            </div>
+
+            <!-- Tableau -->
+            <div class="premium-card overflow-hidden animate-fade-in-up" style="animation-delay:0.3s">
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[900px]" id="stocksTable">
+                        <thead>
+                            <tr class="border-b border-[var(--divider)] text-left">
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">ID</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Produit</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Type</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Quantité</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Prix</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Valeur</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Seuil</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Date</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[var(--divider)]" id="tableBody">
+                            <?php if (!empty($stocks)): ?>
+                                <?php foreach ($stocks as $s):
+                                    $isLow = $s['quantite'] <= $s['seuil_alerte_stock'];
+                                    $ut = $s['produit_unite'] == 'metres' ? 'mètres' : 'pièces';
+                                    $valeur = $s['quantite'] * $s['prix'];
                                 ?>
-                            </select>
-                            <div id="produitInfo" class="info-box mt-2 hidden">
-                                <p id="produitDescription"></p>
-                                <p id="produitUnite" class="mt-1"></p>
-                            </div>
-                        </div>
+                                    <tr class="hover:bg-white/5 transition-colors stock-row <?= $isLow ? 'bg-amber-50/50 dark:bg-amber-900/10' : '' ?>"
+                                        data-designation="<?= strtolower($s['produit_designation']) ?>"
+                                        data-matricule="<?= strtolower($s['produit_matricule']) ?>"
+                                        data-mouvement="<?= strtolower($s['type_mouvement']) ?>">
+                                        <td class="px-5 py-3.5 text-sm font-mono font-bold text-[var(--text-primary)]">#<?= $s['id'] ?></td>
+                                        <td class="px-5 py-3.5">
+                                            <span class="text-sm font-medium text-[var(--text-primary)]"><?= htmlspecialchars($s['produit_designation']) ?></span>
+                                            <span class="text-xs text-[var(--text-muted)] block font-mono"><?= $s['produit_matricule'] ?></span>
+                                        </td>
+                                        <td class="px-5 py-3.5">
+                                            <span class="px-2 py-1 rounded-full text-xs font-medium <?= $s['type_mouvement'] == 'transfert' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' ?>">
+                                                <?= $s['type_mouvement'] == 'transfert' ? 'Transfert' : 'Approvisionnement' ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-5 py-3.5 text-sm font-bold <?= $isLow ? 'text-amber-600 dark:text-amber-400' : 'text-[var(--text-primary)]' ?>">
+                                            <?= number_format($s['quantite'], 3) ?> <span class="text-xs font-normal text-[var(--text-muted)]"><?= $ut ?></span>
+                                        </td>
+                                        <td class="px-5 py-3.5 text-sm text-[var(--text-primary)]"><?= number_format($s['prix'], 2) ?> $</td>
+                                        <td class="px-5 py-3.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400"><?= number_format($valeur, 2) ?> $</td>
+                                        <td class="px-5 py-3.5">
+                                            <span class="px-2 py-1 rounded-full text-xs font-medium <?= $isLow ? 'badge-warning' : 'badge-success' ?>"><?= $isLow ? 'Faible' : 'OK' ?> (<?= $s['seuil_alerte_stock'] ?>)</span>
+                                        </td>
+                                        <td class="px-5 py-3.5 text-sm text-[var(--text-muted)]"><?= date('d/m/Y H:i', strtotime($s['date_creation'])) ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="8" class="px-5 py-12 text-center"><i class="fas fa-inbox text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                                        <p class="text-[var(--text-secondary)] font-medium">Aucun stock enregistré</p>
+                                        <p class="text-xs text-[var(--text-muted)] mt-1">Utilisez le bouton "Enregistrer un stock"</p>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
 
-                        <!-- Information sur le type de mouvement -->
-                        <div class="info-box">
-                            <div class="flex items-start space-x-3">
-                                <i class="fas fa-info-circle text-blue-500 mt-0.5"></i>
-                                <div>
-                                    <p class="font-medium text-gray-900 mb-1">Type de mouvement: Approvisionnement</p>
-                                    <p class="text-xs text-gray-600">
-                                        Tous les enregistrements de stock sont considérés comme des approvisionnements.
-                                        Les transferts entre boutiques sont gérés séparément dans la section "Transferts".
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                <div id="noResults" class="hidden text-center py-12">
+                    <i class="fas fa-search text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                    <p class="text-[var(--text-secondary)] font-medium">Aucun résultat trouvé</p>
+                </div>
 
-                        <!-- Quantité et prix -->
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2">
-                                    <i class="fas fa-weight-hanging mr-2"></i>
-                                    Quantité *
-                                </label>
-                                <div class="input-with-unite">
-                                    <input type="number" name="quantite" step="0.001" min="0.001" required
-                                           placeholder="Ex: 100.000"
-                                           class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                    <span id="uniteLabel" class="unite-label">pièces</span>
-                                </div>
-                            </div>
-                            
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2">
-                                    <i class="fas fa-tag mr-2"></i>
-                                    Prix unitaire ($) *
-                                </label>
-                                <div class="input-with-unite">
-                                    <input type="number" name="prix" step="0.01" min="0.01" required
-                                           placeholder="Ex: 25.50"
-                                           class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                    <span id="prixUniteLabel" class="unite-label">$/unité</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Seuil d'alerte -->
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">
-                                <i class="fas fa-bell mr-2"></i>
-                                Seuil d'alerte stock *
-                            </label>
-                            <div class="flex items-center space-x-3">
-                                <input type="number" name="seuil_alerte_stock" value="5" min="1" required
-                                       class="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                <span id="seuilUniteLabel" class="text-sm text-gray-600">unités</span>
-                            </div>
-                            <p class="text-xs text-gray-500 mt-2">
-                                <i class="fas fa-info-circle text-blue-500 mr-1"></i>
-                                Le système vous alertera quand le stock atteindra cette quantité
-                            </p>
-                        </div>
-
-                        <!-- Bouton d'enregistrement -->
-                        <div class="pt-4 border-t border-gray-200">
-                            <div class="flex justify-end space-x-3">
-                                <button type="button" onclick="closeEnregistrerStockModal()"
-                                        class="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-medium">
-                                    Annuler
-                                </button>
-                                <button type="submit" id="submitBtn"
-                                        class="px-6 py-3 gradient-blue-btn rounded-xl font-medium flex items-center space-x-2">
-                                    <i class="fas fa-save"></i>
-                                    <span>Enregistrer le stock</span>
-                                </button>
-                            </div>
+                <?php if ($totalPages > 1): ?>
+                    <div class="px-5 py-4 border-t border-[var(--divider)] flex items-center justify-between">
+                        <span class="text-xs text-[var(--text-muted)] hidden sm:block"><?= ($page - 1) * $limit + 1 ?>-<?= min($page * $limit, $total_stocks) ?> sur <?= $total_stocks ?></span>
+                        <div class="flex items-center gap-1.5 mx-auto sm:mx-0">
+                            <a href="?page=<?= max(1, $page - 1) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page <= 1 ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-left text-xs"></i></a>
+                            <?php for ($i = max(1, $page - 1); $i <= min($totalPages, $page + 1); $i++): ?>
+                                <a href="?page=<?= $i ?>" class="w-8 h-8 rounded-lg text-sm font-medium flex items-center justify-center transition-all <?= $i == $page ? 'btn-glass shadow-md' : 'glass hover:bg-white/20 text-[var(--text-secondary)]' ?>"><?= $i ?></a>
+                            <?php endfor; ?>
+                            <a href="?page=<?= min($totalPages, $page + 1) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page >= $totalPages ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-right text-xs"></i></a>
                         </div>
                     </div>
-                </form>
+                <?php endif; ?>
             </div>
+
         </div>
+    </main>
+
+    <!-- MODAL ENREGISTRER STOCK -->
+    <div id="stockModalOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
+    <div id="stockModalContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-md p-6">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-lg font-bold text-[var(--text-primary)]"><i class="fas fa-box mr-2 text-blue-500"></i>Enregistrer un stock</h3>
+            <button onclick="closeStockModal()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="stockForm" action="../models/traitement/enregistrer_stock.php" method="POST" class="space-y-4">
+            <input type="hidden" name="boutique_id" value="<?= $boutique_id ?>">
+            <div>
+                <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Produit *</label>
+                <select name="produit_matricule" id="produitSelect" required class="w-full input-glass px-3 py-2.5 text-sm" onchange="updateUnite()">
+                    <option value="">Sélectionnez un produit</option>
+                    <?php foreach ($produits as $p): ?>
+                        <option value="<?= $p['matricule'] ?>" data-unite="<?= $p['umProduit'] ?>" data-designation="<?= htmlspecialchars($p['designation']) ?>"><?= htmlspecialchars($p['designation']) ?> (<?= $p['matricule'] ?>)</option>
+                    <?php endforeach; ?>
+                </select>
+                <div id="produitInfo" class="hidden mt-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 text-xs">
+                    <p><strong>Produit :</strong> <span id="infoDesignation">-</span></p>
+                    <p><strong>Unité :</strong> <span id="infoUnite">-</span></p>
+                </div>
+            </div>
+            <div class="p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/30 text-xs text-blue-700 dark:text-blue-300">
+                <i class="fas fa-info-circle mr-1"></i>Type de mouvement : <strong>Approvisionnement</strong>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Quantité *</label>
+                    <div class="relative">
+                        <input type="number" name="quantite" step="0.001" min="0.001" required placeholder="0.000" class="w-full input-glass pl-4 pr-14 py-2.5 text-sm">
+                        <span id="uniteLabel" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)]">pièces</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Prix unitaire ($) *</label>
+                    <input type="number" name="prix" step="0.01" min="0.01" required placeholder="0.00" class="w-full input-glass px-4 py-2.5 text-sm">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Seuil d'alerte *</label>
+                <div class="flex items-center gap-2">
+                    <input type="number" name="seuil_alerte_stock" value="5" min="1" required class="w-full input-glass px-4 py-2.5 text-sm">
+                    <span id="seuilLabel" class="text-xs text-[var(--text-muted)] whitespace-nowrap">unités</span>
+                </div>
+                <p class="text-xs text-[var(--text-muted)] mt-1">Alerte quand le stock atteint cette quantité</p>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="closeStockModal()" class="px-4 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
+                <button type="submit" class="btn-green px-5 py-2.5 rounded-xl text-sm"><i class="fas fa-save mr-1.5"></i>Enregistrer</button>
+            </div>
+        </form>
     </div>
 
     <script>
-        // --- GESTION DE LA SIDEBAR MOBILE ---
-        const mobileMenuButton = document.getElementById('mobileMenuButton');
+        // Theme
+        const themeToggle = document.getElementById('theme-toggle');
+        const html = document.documentElement;
+        if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) html.classList.add('dark');
+        themeToggle.addEventListener('click', () => {
+            html.classList.toggle('dark');
+            localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
+        });
+
+        // Sidebar
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('overlay');
 
         function toggleSidebar() {
-            sidebar.classList.toggle('-translate-x-full');
+            sidebar.classList.toggle('open');
             overlay.classList.toggle('hidden');
-            mobileMenuButton.classList.toggle('active');
         }
-
-        mobileMenuButton.addEventListener('click', toggleSidebar);
+        document.getElementById('mobileMenuBtn').addEventListener('click', toggleSidebar);
         overlay.addEventListener('click', toggleSidebar);
 
-        // --- GESTION DES LIENS ACTIFS ---
-        const currentPage = window.location.pathname.split('/').pop();
-        const navLinks = document.querySelectorAll('.nav-link');
-        
-        navLinks.forEach(link => {
-            const href = link.getAttribute('href');
-            if (href === currentPage) {
-                link.classList.add('active');
+        // Modal
+        function openStockModal() {
+            document.getElementById('stockModalOverlay').classList.remove('hidden');
+            document.getElementById('stockModalContent').classList.remove('hidden');
+        }
+
+        function closeStockModal() {
+            document.getElementById('stockModalOverlay').classList.add('hidden');
+            document.getElementById('stockModalContent').classList.add('hidden');
+        }
+        document.getElementById('stockModalOverlay')?.addEventListener('click', function(e) {
+            if (e.target === this) closeStockModal();
+        });
+
+        // Update unité
+        function updateUnite() {
+            const sel = document.getElementById('produitSelect');
+            const opt = sel.options[sel.selectedIndex];
+            const box = document.getElementById('produitInfo');
+            if (opt && opt.value) {
+                const u = opt.dataset.unite === 'metres' ? 'mètres' : 'pièces';
+                document.getElementById('infoDesignation').textContent = opt.dataset.designation;
+                document.getElementById('infoUnite').textContent = u;
+                document.getElementById('uniteLabel').textContent = u;
+                document.getElementById('seuilLabel').textContent = u;
+                box.classList.remove('hidden');
             } else {
-                link.classList.remove('active');
-            }
-        });
-
-        // --- GESTION DE LA RECHERCHE ---
-        document.getElementById('searchInput').addEventListener('keyup', function() {
-            const searchTerm = this.value.toLowerCase();
-            const rows = document.querySelectorAll('.stock-row');
-            let found = false;
-
-            rows.forEach(row => {
-                const produitDesignation = row.dataset.produitDesignation;
-                const produitMatricule = row.dataset.produitMatricule;
-                const typeMouvement = row.dataset.typeMouvement;
-                const unite = row.dataset.unite;
-
-                if (produitDesignation.includes(searchTerm) || 
-                    produitMatricule.includes(searchTerm) || 
-                    typeMouvement.includes(searchTerm) ||
-                    unite.includes(searchTerm)) {
-                    row.style.display = '';
-                    found = true;
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-
-            document.getElementById('noResults').classList.toggle('hidden', found);
-            document.getElementById('tableBody').classList.toggle('hidden', !found && searchTerm !== '');
-        });
-
-        // --- FONCTION DE RAFRAÎCHISSEMENT ---
-        function refreshPage() {
-            const button = event.target.closest('button');
-            if (button) {
-                button.classList.add('animate-spin');
-                setTimeout(() => {
-                    button.classList.remove('animate-spin');
-                    window.location.reload();
-                }, 500);
+                box.classList.add('hidden');
             }
         }
 
-        // --- ANIMATION DES LIGNES AU CHARGEMENT ---
-        document.addEventListener('DOMContentLoaded', function() {
-            const rows = document.querySelectorAll('.fade-in-row');
-            rows.forEach((row, index) => {
-                row.style.animationDelay = `${index * 0.05}s`;
-            });
-        });
-
-        // --- GESTION DES EFFETS VISUELS ---
-        document.querySelectorAll('.stats-card, .nav-link').forEach(element => {
-            element.addEventListener('mouseenter', function() {
-                this.style.transform = 'translateY(-3px)';
-            });
-            
-            element.addEventListener('mouseleave', function() {
-                this.style.transform = 'translateY(0)';
-            });
-        });
-
-        // --- DÉTECTION DE LA CONNEXION ---
-        window.addEventListener('online', function() {
-            showNotification('Vous êtes reconnecté à internet', 'success');
-        });
-
-        window.addEventListener('offline', function() {
-            showNotification('Vous êtes hors ligne', 'warning');
-        });
-
-        // --- GESTION DU MODAL D'ENREGISTREMENT DE STOCK ---
-        function openEnregistrerStockModal() {
-            document.getElementById('enregistrerStockModal').classList.add('show');
-            document.body.style.overflow = 'hidden';
-        }
-
-        function closeEnregistrerStockModal() {
-            document.getElementById('enregistrerStockModal').classList.remove('show');
-            document.body.style.overflow = 'auto';
-            resetEnregistrerStockForm();
-        }
-
-        function resetEnregistrerStockForm() {
-            document.getElementById('enregistrerStockForm').reset();
-            document.getElementById('produitInfo').classList.add('hidden');
-            document.getElementById('uniteLabel').textContent = 'pièces';
-            document.getElementById('prixUniteLabel').textContent = '$/unité';
-            document.getElementById('seuilUniteLabel').textContent = 'unités';
-        }
-
-        // --- GESTION DE LA SÉLECTION DE PRODUIT ---
-        document.getElementById('produitSelect').addEventListener('change', function() {
-            const selectedOption = this.options[this.selectedIndex];
-            const produitInfo = document.getElementById('produitInfo');
-            const uniteLabel = document.getElementById('uniteLabel');
-            const prixUniteLabel = document.getElementById('prixUniteLabel');
-            const seuilUniteLabel = document.getElementById('seuilUniteLabel');
-            const produitDescription = document.getElementById('produitDescription');
-            const produitUnite = document.getElementById('produitUnite');
-            
-            if (selectedOption.value) {
-                const unite = selectedOption.getAttribute('data-unite');
-                const designation = selectedOption.getAttribute('data-designation');
-                const texteUnite = unite === 'metres' ? 'mètres' : 'pièces';
-                
-                // Mettre à jour les labels d'unité
-                uniteLabel.textContent = texteUnite;
-                prixUniteLabel.textContent = `$/${texteUnite}`;
-                seuilUniteLabel.textContent = texteUnite;
-                
-                // Afficher les informations du produit
-                produitDescription.textContent = `Produit sélectionné: ${designation}`;
-                produitUnite.textContent = `Unité de mesure: ${texteUnite}`;
-                produitInfo.classList.remove('hidden');
-            } else {
-                produitInfo.classList.add('hidden');
-                uniteLabel.textContent = 'pièces';
-                prixUniteLabel.textContent = '$/unité';
-                seuilUniteLabel.textContent = 'unités';
-            }
-        });
-
-        // --- GESTION DU FORMULAIRE D'ENREGISTREMENT (AJAX) ---
-        document.getElementById('enregistrerStockForm').addEventListener('submit', function(e) {
+        // Formulaire AJAX
+        document.getElementById('stockForm').addEventListener('submit', function(e) {
             e.preventDefault();
-            
-            const submitBtn = document.getElementById('submitBtn');
-            const originalText = submitBtn.innerHTML;
-            
-            // Désactiver le bouton et afficher un spinner
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = `
-                <div class="loading-spinner-small"></div>
-                <span>Enregistrement en cours...</span>
-            `;
-            
-            // Récupérer les données du formulaire
-            const formData = new FormData(this);
-            
-            // Envoyer la requête AJAX
+            const btn = this.querySelector('button[type="submit"]');
+            const orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Enregistrement...';
             fetch(this.action, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'Accept': 'application/json'
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`Erreur HTTP: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Réponse reçue:', data);
-                
-                if (data.success) {
-                    // Afficher un message de succès
-                    showNotification(data.message || 'Stock enregistré avec succès !', 'success');
-                    
-                    // Fermer le modal
-                    closeEnregistrerStockModal();
-                    
-                    // Rediriger après un délai
-                    setTimeout(() => {
-                        window.location.href = data.redirect || 'stock_boutique.php';
-                    }, 2000);
-                } else {
-                    // Afficher un message d'erreur détaillé
-                    showNotification(data.message || 'Erreur lors de l\'enregistrement', 'error');
-                    
-                    // Réactiver le bouton
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = originalText;
-                }
-            })
-            .catch(error => {
-                console.error('Erreur détaillée:', error);
-                
-                // Afficher un message d'erreur plus informatif
-                let errorMessage = 'Erreur réseau ou serveur';
-                if (error.message.includes('HTTP')) {
-                    errorMessage = `Erreur de connexion au serveur (${error.message})`;
-                }
-                
-                showNotification(`${errorMessage}. Veuillez réessayer.`, 'error');
-                
-                // Réactiver le bouton
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = originalText;
+                    method: 'POST',
+                    body: new FormData(this)
+                })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        closeStockModal();
+                        setTimeout(() => window.location.href = d.redirect || 'stock_boutique.php', 1500);
+                    } else {
+                        alert(d.message || 'Erreur');
+                        btn.disabled = false;
+                        btn.innerHTML = orig;
+                    }
+                })
+                .catch(() => {
+                    alert('Erreur réseau');
+                    btn.disabled = false;
+                    btn.innerHTML = orig;
+                });
+        });
+
+        // Search
+        document.getElementById('searchInput')?.addEventListener('keyup', function() {
+            const s = this.value.toLowerCase();
+            let found = false;
+            document.querySelectorAll('.stock-row').forEach(r => {
+                const m = r.dataset.designation.includes(s) || r.dataset.matricule.includes(s) || r.dataset.mouvement.includes(s);
+                r.style.display = m ? '' : 'none';
+                if (m) found = true;
             });
+            document.getElementById('noResults')?.classList.toggle('hidden', found || s === '');
+            document.getElementById('tableBody')?.classList.toggle('hidden', !found && s !== '');
         });
 
-        // Fonction pour afficher des notifications temporaires
-        function showNotification(message, type) {
-            const notification = document.createElement('div');
-            notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg text-white z-50 animate-fade-in ${
-                type === 'success' ? 'bg-green-500' : 
-                type === 'error' ? 'bg-red-500' : 
-                type === 'warning' ? 'bg-yellow-500' : 
-                'bg-blue-500'
-            }`;
-            notification.innerHTML = `
-                <div class="flex items-center space-x-3">
-                    <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
-                    <span>${message}</span>
-                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-            `;
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.remove();
-                }
-            }, 5000);
-        }
-
-        // Fermer le modal avec la touche Échap
-        document.addEventListener('keydown', function(e) {
+        // Escape
+        document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
-                closeEnregistrerStockModal();
-                if (!sidebar.classList.contains('-translate-x-full')) toggleSidebar();
-            }
-        });
-
-        // Fermer le modal en cliquant en dehors
-        document.getElementById('enregistrerStockModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeEnregistrerStockModal();
-            }
-        });
-
-        // --- NAVIGATION CLAVIER ---
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                if (!sidebar.classList.contains('-translate-x-full')) toggleSidebar();
+                closeStockModal();
+                if (sidebar.classList.contains('open')) toggleSidebar();
             }
         });
     </script>
+
+    <?php unset($_SESSION['msg']); ?>
 </body>
+
 </html>

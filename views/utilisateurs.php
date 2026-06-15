@@ -1,1139 +1,709 @@
 <?php
-# Connexion à la base de données
 include '../connexion/connexion.php';
 
-// Vérification de l'authentification PDG
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'pdg') {
     header('Location: ../login.php');
     exit;
 }
 
-// Initialisation des variables
 $message = '';
 $message_type = '';
 $total_utilisateurs = 0;
 $utilisateurs = [];
 
-// --- GESTION DES MESSAGES VIA SESSIONS ---
 if (isset($_SESSION['flash_message'])) {
     $message = $_SESSION['flash_message']['text'];
     $message_type = $_SESSION['flash_message']['type'];
-    unset($_SESSION['flash_message']); // Supprimer le message après affichage
+    unset($_SESSION['flash_message']);
 }
 
-// Vérifier si c'est une requête AJAX pour récupérer les données d'un utilisateur (pour édition)
+// AJAX get utilisateur
 if (isset($_GET['action']) && $_GET['action'] == 'get_utilisateur' && isset($_GET['id'])) {
-    $utilisateurId = intval($_GET['id']);
-    try {
-        $query = $pdo->prepare("SELECT id, nom_utilisateur, email, role, actif FROM utilisateurs WHERE id = ? AND statut = 0");
-        $query->execute([$utilisateurId]);
-        $utilisateur = $query->fetch(PDO::FETCH_ASSOC);
-
-        if ($utilisateur) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => true, 'utilisateur' => $utilisateur]);
-        } else {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Utilisateur non trouvé']);
-        }
-    } catch (PDOException $e) {
-        header('Content-Type: application/json');
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Erreur de base de données.']);
-    }
+    $query = $pdo->prepare("SELECT id, nom_utilisateur, email, role, actif FROM utilisateurs WHERE id = ? AND statut = 0");
+    $query->execute([(int)$_GET['id']]);
+    $utilisateur = $query->fetch(PDO::FETCH_ASSOC);
+    header('Content-Type: application/json');
+    echo json_encode($utilisateur ? ['success' => true, 'utilisateur' => $utilisateur] : ['success' => false, 'message' => 'Non trouvé']);
     exit;
 }
 
 // Pagination
 $limit = 10;
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $offset = ($page - 1) * $limit;
 
-// Compter le nombre total d'utilisateurs
 try {
-    $countQuery = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE statut = 0");
-    $total_utilisateurs = $countQuery->fetchColumn();
+    $total_utilisateurs = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE statut = 0")->fetchColumn();
     $totalPages = ceil($total_utilisateurs / $limit);
+    if ($totalPages < 1) $totalPages = 1;
 
-    // Requête paginée
     $query = $pdo->prepare("SELECT * FROM utilisateurs WHERE statut = 0 ORDER BY role, date_creation DESC LIMIT :limit OFFSET :offset");
     $query->bindValue(':limit', $limit, PDO::PARAM_INT);
     $query->bindValue(':offset', $offset, PDO::PARAM_INT);
     $query->execute();
-    $utilisateurs = $query->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Compter les actifs pour la carte de stats
-    $active_count_total = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE actif = 1 AND statut = 0")->fetchColumn();
-    // Compter les PDG
-    $pdg_count = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE role = 'PDG' AND statut = 0")->fetchColumn();
-    // Compter les IT
-    $it_count = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE role = 'IT' AND statut = 0")->fetchColumn();
+    $utilisateurs = $query->fetchAll();
 
+    $active_count = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE actif = 1 AND statut = 0")->fetchColumn();
+    $pdg_count = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE role = 'PDG' AND statut = 0")->fetchColumn();
+    $it_count = $pdo->query("SELECT COUNT(*) FROM utilisateurs WHERE role = 'IT' AND statut = 0")->fetchColumn();
 } catch (PDOException $e) {
-    $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des utilisateurs: " . $e->getMessage(),
-        'type' => "error"
-    ];
-    $active_count_total = 0;
+    $message = "Erreur : " . $e->getMessage();
+    $message_type = 'error';
+    $active_count = 0;
     $pdg_count = 0;
     $it_count = 0;
 }
 ?>
 
 <!DOCTYPE html>
-<html lang="fr" class="h-full">
+<html lang="fr" class="scroll-smooth">
 
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <title>Gestion des utilisateurs - NGS (New Grace Service)</title>
-    
+    <title>Utilisateurs - NGS (PDG)</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
 
     <style>
         :root {
-            --primary: #0A2540;
-            --secondary: #7B61FF;
-            --accent: #00D4AA;
-            --light: #F8FAFC;
-            --dark: #1E293B;
+            --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
+            --glass-bg: rgba(255, 255, 255, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.3);
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --text-primary: #1a1a2e;
+            --text-secondary: #4a4a6a;
+            --text-muted: #6b7280;
+            --accent-gradient: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            --input-bg: rgba(255, 255, 255, 0.9);
+            --input-border: rgba(0, 0, 0, 0.1);
+            --divider: rgba(0, 0, 0, 0.06);
+        }
+
+        .dark {
+            --sidebar-bg: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+            --glass-bg: rgba(15, 23, 42, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+            --input-bg: rgba(30, 41, 59, 0.8);
+            --input-border: rgba(255, 255, 255, 0.1);
+            --divider: rgba(255, 255, 255, 0.06);
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F8FAFC;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 50%, #f5f3ff 100%);
+            color: var(--text-primary);
+            transition: background 0.4s ease, color 0.4s ease;
         }
 
-        .font-display {
-            font-family: 'Outfit', sans-serif;
+        .dark body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
         }
 
-        .gradient-bg {
-            background: linear-gradient(135deg, #0A2540 0%, #1E3A5F 100%);
-        }
-
-        .gradient-accent {
-            background: linear-gradient(90deg, #7B61FF 0%, #00D4AA 100%);
-        }
-
-        .gradient-blue-btn {
-            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%); 
-            color: white; 
-            transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
-        }
-
-        .gradient-blue-btn:hover {
-            opacity: 0.9;
-            transform: translateY(-2px);
-        }
-
-        .shadow-soft {
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
-        }
-
-        .hover-lift {
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .hover-lift:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
-        }
-
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.show {
-            display: flex;
-        }
-
-        .modal-content {
-            background-color: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .slide-down {
-            animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-20px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .status-active {
-            background-color: #D1FAE5;
-            color: #065F46;
-        }
-
-        .status-inactive {
-            background-color: #FEE2E2;
-            color: #991B1B;
-        }
-
-        .role-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .role-pdg {
-            background-color: #FEF3C7;
-            color: #92400E;
-        }
-
-        .role-it {
-            background-color: #DBEAFE;
-            color: #1E40AF;
-        }
-        
-        /* NOUVELLES STYLES POUR LA SIDEBAR AVEC DÉFILEMENT */
         .sidebar {
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
+            background: var(--sidebar-bg);
         }
 
-        .sidebar-header, .sidebar-profile, .sidebar-footer {
-            flex-shrink: 0;
-        }
-
-        .sidebar-nav {
-            flex: 1;
-            overflow-y: auto;
-            overflow-x: hidden;
-            min-height: 0;
-        }
-
-        /* Personnalisation de la scrollbar pour la sidebar */
-        .sidebar-nav::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .sidebar-nav::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 10px;
-        }
-
-        .sidebar-nav::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 10px;
-            transition: background 0.3s ease;
-        }
-
-        .sidebar-nav::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-
-        /* Pour Firefox */
-        .sidebar-nav {
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05);
-        }
-
-        /* Animation de transition pour les liens de la sidebar */
-        .nav-link {
-            position: relative;
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
             transition: all 0.3s ease;
         }
 
+        .premium-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.25rem;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+            transition: all 0.3s ease;
+        }
+
+        .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        }
+
+        .dark .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .input-glass {
+            background: var(--input-bg);
+            border: 2px solid var(--input-border);
+            color: var(--text-primary);
+            border-radius: 0.75rem;
+            transition: all 0.3s ease;
+        }
+
+        .input-glass:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+            outline: none;
+        }
+
+        .btn-glass {
+            background: var(--accent-gradient);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(30, 58, 138, 0.2);
+        }
+
+        .btn-glass:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(30, 58, 138, 0.35);
+        }
+
+        .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            transition: all 0.3s ease;
+            border-radius: 0.75rem;
+        }
+
         .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
             padding-left: 1.25rem;
-            background: rgba(255, 255, 255, 0.08);
         }
 
         .nav-link.active {
             background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border-left: 3px solid #60a5fa;
         }
 
-        .nav-link.active::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 4px;
-            height: 60%;
-            background: var(--accent);
-            border-radius: 0 4px 4px 0;
-        }
-
-        /* Amélioration de la zone de contenu principal */
-        .main-content {
-            height: 100vh;
-            overflow-y: auto;
-        }
-
-        /* Smooth scroll pour tout le document */
-        html {
-            scroll-behavior: smooth;
-        }
-
-        /* Animation pour le bouton mobile */
-        .mobile-menu-btn {
-            transition: transform 0.3s ease;
-        }
-
-        .mobile-menu-btn.active {
-            transform: rotate(90deg);
-        }
-
-        /* Effet de fondu pour les éléments de la table */
-        .fade-in-row {
-            animation: fadeInRow 0.5s ease-out forwards;
-            opacity: 0;
-        }
-
-        @keyframes fadeInRow {
-            to {
-                opacity: 1;
-            }
-        }
-
-        /* Hover effects pour les cartes de statistiques */
-        .stats-card {
+        .stat-card {
             transition: all 0.3s ease;
         }
 
-        .stats-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
         }
 
-        /* Loading animation */
-        .loading-spinner {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
+        .theme-toggle {
+            width: 44px;
+            height: 24px;
+            background: #cbd5e1;
+            border-radius: 12px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s ease;
         }
 
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        .dark .theme-toggle {
+            background: #334155;
         }
 
-        /* Badge de notification */
-        .notification-badge {
+        .theme-toggle::after {
+            content: '';
             position: absolute;
-            top: 0;
-            right: 0;
-            transform: translate(50%, -50%);
-            background: var(--accent);
-            color: white;
-            border-radius: 50%;
+            top: 2px;
+            left: 2px;
             width: 20px;
             height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 10px;
-            font-weight: bold;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
         }
 
-        /* Style pour les boutons d'action */
-        .action-btn {
-            transition: all 0.2s ease;
+        .dark .theme-toggle::after {
+            transform: translateX(20px);
+            background: #fbbf24;
         }
 
-        .action-btn:hover {
-            transform: translateY(-1px);
+        .modal-overlay {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
         }
 
-        /* Responsive adjustments */
+        .modal-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.5rem;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .dark .badge-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+        }
+
+        .dark .badge-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        .badge-pdg {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-it {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .dark .badge-pdg {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+        }
+
+        .dark .badge-it {
+            background: rgba(59, 130, 246, 0.2);
+            color: #93c5fd;
+        }
+
+        *:focus-visible {
+            outline: 2px solid #60a5fa;
+            outline-offset: 2px;
+            border-radius: 6px;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-fade-in-up {
+            animation: fadeInUp 0.4s ease-out forwards;
+        }
+
         @media (max-width: 768px) {
-            .sidebar-nav {
-                padding-top: 0.5rem;
-                padding-bottom: 0.5rem;
+            .sidebar {
+                transform: translateX(-100%);
             }
-            
-            .nav-link {
-                padding: 0.75rem 1rem;
-            }
-            
-            .stats-card {
-                margin-bottom: 1rem;
-            }
-            
-            .action-buttons {
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-            
-            .action-btn {
-                width: 100%;
-                justify-content: center;
+
+            .sidebar.open {
+                transform: translateX(0);
             }
         }
     </style>
 </head>
 
-<body class="font-inter min-h-screen bg-gray-50">
-    <button id="mobileMenuButton" class="mobile-menu-btn md:hidden fixed top-4 left-4 z-50 p-3 text-white bg-gradient-to-r from-blue-600 to-purple-600 rounded-full shadow-lg hover:shadow-xl transition-shadow">
-        <i class="fas fa-bars"></i>
-    </button>
+<body class="h-screen flex overflow-hidden">
 
     <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 
-    <div class="flex h-screen">
-        <aside id="sidebar" class="sidebar w-64 gradient-bg text-white flex flex-col fixed inset-y-0 left-0 transform -translate-x-full md:sticky md:top-0 md:h-full md:translate-x-0 transition-transform duration-300 ease-in-out z-50 md:z-auto">
-            <div class="sidebar-header p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center shadow-lg">
-                        <span class="font-bold text-white text-lg font-display">NGS</span>
-                    </div>
+    <!-- SIDEBAR PDG -->
+    <aside id="sidebar" class="sidebar w-64 flex flex-col fixed md:sticky top-0 h-full z-50 transition-transform duration-300 text-white">
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg"><span class="font-bold text-white">NGS</span></div>
+                <div>
+                    <h2 class="font-bold text-sm">NGS Pro</h2>
+                    <p class="text-[10px] text-gray-400">Dashboard PDG</p>
+                </div>
+            </div>
+        </div>
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-400/30 flex items-center justify-center"><i class="fas fa-crown text-amber-400"></i></div>
+                <div class="min-w-0">
+                    <p class="font-semibold text-sm truncate"><?= htmlspecialchars($_SESSION['user_name'] ?? 'PDG') ?></p>
+                    <p class="text-xs text-gray-400 truncate"><?= htmlspecialchars($_SESSION['user_email'] ?? '') ?></p>
+                </div>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+            <a href="dashboard_pdg.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-line w-4 text-center"></i>Tableau de bord</a>
+            <a href="boutiques.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-store w-4 text-center"></i>Boutiques</a>
+            <a href="produits.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-box w-4 text-center"></i>Produits</a>
+            <a href="stocks.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-warehouse w-4 text-center"></i>Stocks</a>
+            <a href="transferts.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-exchange-alt w-4 text-center"></i>Transferts</a>
+            <a href="utilisateurs.php" class="nav-link active flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-users w-4 text-center"></i>Utilisateurs<?php if ($total_utilisateurs > 0): ?><span class="ml-auto bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full"><?= $total_utilisateurs ?></span><?php endif; ?></a>
+            <a href="rapports_pdg.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-bar w-4 text-center"></i>Rapports</a>
+            <a href="realisations.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-images w-4 text-center"></i>Réalisations</a>
+        </nav>
+        <div class="p-3 border-t border-white/10 flex-shrink-0">
+            <div class="flex items-center justify-between px-3 py-2 mb-2"><span class="text-xs text-gray-400"><i class="fas fa-moon mr-1"></i>Thème</span><button id="theme-toggle" class="theme-toggle" aria-label="Changer le thème"></button></div>
+            <a href="../models/logout.php" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors text-sm"><i class="fas fa-sign-out-alt w-4 text-center"></i>Déconnexion</a>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 overflow-y-auto">
+        <header class="sticky top-0 z-30 glass border-b border-white/10">
+            <div class="flex items-center justify-between px-4 md:px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <button id="mobileMenuBtn" class="md:hidden p-2 rounded-lg hover:bg-white/10 transition-colors text-[var(--text-primary)]"><i class="fas fa-bars text-lg"></i></button>
                     <div>
-                        <h1 class="font-display text-xl font-bold">NGS</h1>
-                        <p class="text-xs text-gray-300">New Grace Service - Dashboard PDG</p>
+                        <h1 class="text-lg md:text-xl font-bold text-[var(--text-primary)]">Gestion des Utilisateurs</h1>
+                        <p class="text-xs text-[var(--text-muted)]">Administration • Comptes</p>
                     </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openUtilisateurModal()" class="btn-glass px-4 py-2 rounded-xl text-sm flex items-center gap-2"><i class="fas fa-user-plus"></i><span class="hidden sm:inline">Nouvel utilisateur</span></button>
+                </div>
+            </div>
+        </header>
+
+        <div class="p-4 md:p-6 space-y-6">
+
+            <?php if ($message): ?>
+                <div class="animate-fade-in-up">
+                    <div class="glass rounded-2xl p-4 border-l-4 <?= $message_type === 'success' ? 'border-emerald-500' : 'border-red-500' ?>">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-<?= $message_type === 'success' ? 'check-circle text-emerald-500' : 'exclamation-circle text-red-500' ?> text-xl"></i>
+                            <span class="text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($message) ?></span>
+                            <button onclick="this.closest('.animate-fade-in-up').remove()" class="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-blue-500" style="animation-delay:0s">
+                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-blue-600 dark:text-blue-400">Total</span>
+                        <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"><i class="fas fa-users text-blue-600 dark:text-blue-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $total_utilisateurs ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Enregistrés</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-emerald-500" style="animation-delay:0.1s">
+                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Actifs</span>
+                        <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><i class="fas fa-check-circle text-emerald-600 dark:text-emerald-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $active_count ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Connectables</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-amber-500" style="animation-delay:0.2s">
+                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-amber-600 dark:text-amber-400">PDG</span>
+                        <div class="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center"><i class="fas fa-crown text-amber-600 dark:text-amber-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $pdg_count ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Administrateurs</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-indigo-500" style="animation-delay:0.3s">
+                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-indigo-600 dark:text-indigo-400">IT</span>
+                        <div class="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center"><i class="fas fa-laptop-code text-indigo-600 dark:text-indigo-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $it_count ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Techniciens</p>
                 </div>
             </div>
 
-            <div class="sidebar-profile p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 rounded-full bg-yellow-500/20 border-2 border-yellow-500/30 flex items-center justify-center relative">
-                        <i class="fas fa-crown text-yellow-500 text-lg"></i>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
+            <!-- Recherche -->
+            <div class="premium-card p-4 animate-fade-in-up" style="animation-delay:0.15s">
+                <div class="flex items-center gap-3">
+                    <div class="relative flex-1 max-w-md">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"></i>
+                        <input type="text" id="searchInput" placeholder="Rechercher par nom ou email..." class="w-full input-glass pl-10 pr-4 py-2.5 text-sm">
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-semibold truncate"><?= htmlspecialchars($_SESSION['user_name'] ?? 'PDG') ?></h3>
-                        <p class="text-sm text-gray-300 truncate"><?= htmlspecialchars($_SESSION['user_email'] ?? '') ?></p>
-                    </div>
+                    <span class="text-xs text-[var(--text-muted)] hidden sm:block">Page <?= $page ?>/<?= $totalPages ?></span>
+                    <button onclick="window.location.reload()" class="p-2.5 rounded-xl glass hover:bg-white/20 transition-all text-[var(--text-muted)]" title="Actualiser"><i class="fas fa-sync-alt text-sm"></i></button>
                 </div>
             </div>
 
-            <nav class="sidebar-nav p-4 space-y-1">
-                <a href="dashboard_pdg.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors relative">
-                    <i class="fas fa-chart-line w-5 text-gray-300"></i>
-                    <span>Tableau de bord</span>
-                </a>
-                <a href="boutiques.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-store w-5 text-gray-300"></i>
-                    <span>Boutiques</span>
-                </a>
-                <a href="rapports.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
-                    <span>Rapports</span>
-                </a>
-                <a href="produits.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-box w-5 text-gray-300"></i>
-                    <span>Produits</span>
-                </a>
-                <a href="utilisateurs.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10">
-                    <i class="fas fa-users w-5 text-white"></i>
-                    <span>Utilisateurs</span>
-                    <span class="notification-badge"><?= $total_utilisateurs ?></span>
-                </a>
-                <a href="rapports_pdg.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
-                    <i class="fas fa-chart-bar w-5 text-white"></i>
-                    <span>Rapports PDG</span>
-                </a>
-            </nav>
-
-            <div class="sidebar-footer p-4 border-t border-white/10">
-                <a href="../models/logout.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-red-500/10 text-red-300 hover:text-red-200 transition-colors">
-                    <i class="fas fa-sign-out-alt w-5"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </aside>
-
-        <div class="main-content flex-1 overflow-y-auto">
-            <header class="bg-white border-b border-gray-200 p-4 md:p-6 sticky top-0 z-30 shadow-sm">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <h1 class="text-xl md:text-2xl font-bold text-gray-900">Gestion des utilisateurs - NGS</h1>
-                        <p class="text-gray-600 text-sm md:text-base">New Grace Service - Gérez les utilisateurs PDG et IT</p>
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <button onclick="openUtilisateurModal()"
-                            class="px-4 py-3 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
-                            <i class="fas fa-plus"></i>
-                            <span class="hidden md:inline">Nouvel utilisateur</span>
-                            <span class="md:hidden">Nouveau</span>
-                        </button>
-                    </div>
-                </div>
-            </header>
-
-            <main class="p-4 md:p-6">
-                <?php if ($message): ?>
-                    <div class="mb-6 fade-in relative z-10 animate-fade-in">
-                        <div class="
-                    <?php if ($message_type === 'success'): ?>bg-green-50 text-green-700 border border-green-200
-                    <?php elseif ($message_type === 'error'): ?>bg-red-50 text-red-700 border border-red-200
-                    <?php elseif ($message_type === 'warning'): ?>bg-yellow-50 text-yellow-700 border border-yellow-200
-                    <?php else: ?>bg-blue-50 text-blue-700 border border-blue-200<?php endif; ?>
-                    rounded-xl p-4 flex items-center justify-between shadow-soft">
-                            <div class="flex items-center space-x-3">
-                                <?php if ($message_type === 'success'): ?>
-                                    <i class="fas fa-check-circle text-green-600 text-lg"></i>
-                                <?php elseif ($message_type === 'error'): ?>
-                                    <i class="fas fa-exclamation-circle text-red-600 text-lg"></i>
-                                <?php elseif ($message_type === 'warning'): ?>
-                                    <i class="fas fa-exclamation-triangle text-yellow-600 text-lg"></i>
-                                <?php else: ?>
-                                    <i class="fas fa-info-circle text-blue-600 text-lg"></i>
-                                <?php endif; ?>
-                                <span><?= htmlspecialchars($message) ?></span>
-                            </div>
-                            <button onclick="this.parentElement.parentElement.style.display='none'" class="text-gray-400 hover:text-gray-600 transition-colors">
-                                <i class="fas fa-times text-lg"></i>
-                            </button>
-                        </div>
-                    </div>
-                <?php endif; ?>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-blue-500 animate-fade-in">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                                <i class="fas fa-users text-blue-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-blue-600">Total</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_utilisateurs ?></h3>
-                        <p class="text-gray-600">Utilisateurs enregistrés</p>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-green-500 animate-fade-in" style="animation-delay: 0.1s">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
-                                <i class="fas fa-check-circle text-green-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-green-600">Actifs</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $active_count_total ?></h3>
-                        <p class="text-gray-600">Utilisateurs actifs</p>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-yellow-500 animate-fade-in" style="animation-delay: 0.2s">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-yellow-100 flex items-center justify-center">
-                                <i class="fas fa-crown text-yellow-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-yellow-600">PDG</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $pdg_count ?></h3>
-                        <p class="text-gray-600">Administrateurs PDG</p>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-purple-500 animate-fade-in" style="animation-delay: 0.3s">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                                <i class="fas fa-laptop-code text-purple-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-purple-600">IT</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $it_count ?></h3>
-                        <p class="text-gray-600">Techniciens IT</p>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-2xl shadow-soft p-6 mb-6 animate-fade-in" style="animation-delay: 0.4s">
-                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                        <div class="relative flex-1 max-w-lg">
-                            <input type="text"
-                                id="searchInput"
-                                placeholder="Rechercher par Nom d'utilisateur ou Email..."
-                                class="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-secondary focus:border-secondary transition-all shadow-sm">
-                            <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-                        </div>
-
-                        <div class="flex items-center space-x-4">
-                            <div class="text-sm text-gray-600 hidden md:flex items-center space-x-2">
-                                <i class="fas fa-info-circle text-blue-500"></i>
-                                <span>Page <?= $page ?> sur <?= $totalPages ?></span>
-                            </div>
-                            <button onclick="refreshPage()" class="p-2 text-gray-600 hover:text-blue-600 transition-colors" title="Actualiser">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in" style="animation-delay: 0.5s">
-                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                        <h2 class="text-lg font-semibold text-gray-900">Liste des utilisateurs - NGS</h2>
-                    </div>
-
-                    <div class="overflow-x-auto">
-                        <table class="w-full min-w-[700px]" id="utilisateursTable">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom d'utilisateur</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rôle</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Création</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200" id="tableBody">
-                                <?php foreach ($utilisateurs as $index => $utilisateur): ?>
-                                    <tr class="utilisateur-row hover:bg-gray-50 transition-colors fade-in-row"
-                                        data-utilisateur-name="<?= htmlspecialchars(strtolower($utilisateur['nom_utilisateur'])) ?>"
-                                        data-utilisateur-email="<?= htmlspecialchars(strtolower($utilisateur['email'])) ?>"
-                                        style="animation-delay: <?= $index * 0.05 ?>s">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">#<?= $utilisateur['id'] ?></td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 utilisateur-name">
-                                            <div class="flex items-center">
-                                                <div class="w-8 h-8 rounded-full <?= $utilisateur['role'] == 'PDG' ? 'bg-yellow-100' : 'bg-purple-100' ?> flex items-center justify-center mr-3">
-                                                    <i class="<?= $utilisateur['role'] == 'PDG' ? 'fas fa-crown text-yellow-600' : 'fas fa-laptop-code text-purple-600' ?> text-xs"></i>
+            <!-- Tableau -->
+            <div class="premium-card overflow-hidden animate-fade-in-up" style="animation-delay:0.2s">
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[800px]" id="utilisateursTable">
+                        <thead>
+                            <tr class="border-b border-[var(--divider)] text-left">
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">ID</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Utilisateur</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Email</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Rôle</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Création</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Statut</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[var(--divider)]" id="tableBody">
+                            <?php if (!empty($utilisateurs)): ?>
+                                <?php foreach ($utilisateurs as $u): ?>
+                                    <tr class="hover:bg-white/5 transition-colors utilisateur-row" data-name="<?= strtolower($u['nom_utilisateur']) ?>" data-email="<?= strtolower($u['email']) ?>">
+                                        <td class="px-5 py-3.5 text-sm font-mono font-bold text-[var(--text-primary)]">#<?= $u['id'] ?></td>
+                                        <td class="px-5 py-3.5">
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-7 h-7 rounded-full <?= $u['role'] == 'PDG' ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-indigo-100 dark:bg-indigo-900/30' ?> flex items-center justify-center flex-shrink-0">
+                                                    <i class="fas <?= $u['role'] == 'PDG' ? 'fa-crown text-amber-600 dark:text-amber-400' : 'fa-laptop-code text-indigo-600 dark:text-indigo-400' ?> text-xs"></i>
                                                 </div>
-                                                <?= htmlspecialchars($utilisateur['nom_utilisateur']) ?>
+                                                <span class="text-sm font-medium text-[var(--text-primary)]"><?= htmlspecialchars($u['nom_utilisateur']) ?></span>
                                             </div>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 utilisateur-email"><?= htmlspecialchars($utilisateur['email']) ?></td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="role-badge <?= $utilisateur['role'] == 'PDG' ? 'role-pdg' : 'role-it' ?> inline-flex items-center">
-                                                <i class="fas <?= $utilisateur['role'] == 'PDG' ? 'fa-crown' : 'fa-laptop-code' ?> text-xs mr-1"></i>
-                                                <?= $utilisateur['role'] ?>
-                                            </span>
+                                        <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($u['email']) ?></td>
+                                        <td class="px-5 py-3.5">
+                                            <span class="px-2.5 py-1 rounded-full text-xs font-medium <?= $u['role'] == 'PDG' ? 'badge-pdg' : 'badge-it' ?>"><i class="fas <?= $u['role'] == 'PDG' ? 'fa-crown' : 'fa-laptop-code' ?> mr-1"></i><?= $u['role'] ?></span>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?= date('d/m/Y', strtotime($utilisateur['date_creation'])) ?></td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span class="status-badge <?= $utilisateur['actif'] ? 'status-active' : 'status-inactive' ?> inline-flex items-center">
-                                                <i class="fas fa-circle text-xs mr-1"></i>
-                                                <?= $utilisateur['actif'] ? 'Actif' : 'Inactif' ?>
-                                            </span>
+                                        <td class="px-5 py-3.5 text-sm text-[var(--text-muted)]"><?= date('d/m/Y', strtotime($u['date_creation'])) ?></td>
+                                        <td class="px-5 py-3.5">
+                                            <span class="px-2.5 py-1 rounded-full text-xs font-medium <?= $u['actif'] ? 'badge-success' : 'badge-danger' ?>"><?= $u['actif'] ? 'Actif' : 'Inactif' ?></span>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                            <div class="flex space-x-2 action-buttons">
-                                                <button onclick="openUtilisateurModal(<?= $utilisateur['id'] ?>); return false;" 
-                                                        class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
-                                                    <i class="fas fa-edit mr-1"></i>
-                                                    <span class="hidden md:inline">Modifier</span>
-                                                </button>
-                                                <button onclick="openToggleModal(<?= $utilisateur['id'] ?>, '<?= htmlspecialchars(addslashes($utilisateur['nom_utilisateur'])) ?>', <?= $utilisateur['actif'] ?>); return false;"
-                                                        class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white <?= $utilisateur['actif'] ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700' ?> focus:outline-none focus:ring-2 focus:ring-offset-2 <?= $utilisateur['actif'] ? 'focus:ring-orange-500' : 'focus:ring-green-500' ?> transition-colors">
-                                                    <i class="fas fa-power-off mr-1"></i>
-                                                    <span class="hidden md:inline"><?= $utilisateur['actif'] ? 'Désactiver' : 'Activer' ?></span>
-                                                </button>
-                                                <button onclick="openDeleteModal(<?= $utilisateur['id'] ?>, '<?= htmlspecialchars(addslashes($utilisateur['nom_utilisateur'])) ?>'); return false;"
-                                                        class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors">
-                                                    <i class="fas fa-trash-alt mr-1"></i>
-                                                    <span class="hidden md:inline">Supprimer</span>
-                                                </button>
+                                        <td class="px-5 py-3.5">
+                                            <div class="flex items-center justify-center gap-1.5">
+                                                <button onclick="openUtilisateurModal(<?= $u['id'] ?>)" class="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors" title="Modifier"><i class="fas fa-edit text-xs"></i></button>
+                                                <button onclick="openToggleModal(<?= $u['id'] ?>,'<?= htmlspecialchars(addslashes($u['nom_utilisateur'])) ?>',<?= $u['actif'] ?>)" class="p-1.5 rounded-lg <?= $u['actif'] ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' ?> hover:bg-opacity-80 transition-colors" title="<?= $u['actif'] ? 'Désactiver' : 'Activer' ?>"><i class="fas fa-power-off text-xs"></i></button>
+                                                <button onclick="openDeleteModal(<?= $u['id'] ?>,'<?= htmlspecialchars(addslashes($u['nom_utilisateur'])) ?>')" class="p-1.5 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors" title="Supprimer"><i class="fas fa-trash text-xs"></i></button>
                                             </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div id="noResults" class="hidden text-center py-12">
-                        <div class="bg-gray-50 rounded-2xl p-8 max-w-md mx-auto shadow-soft">
-                            <i class="fas fa-search text-6xl text-gray-400 mb-4"></i>
-                            <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
-                            <p class="text-gray-600">Aucun utilisateur ne correspond à votre recherche</p>
-                        </div>
-                    </div>
-
-                    <?php if (empty($utilisateurs) && $page == 1): ?>
-                        <div class="text-center py-12">
-                            <div class="bg-gray-50 rounded-2xl p-8 max-w-md mx-auto shadow-soft">
-                                <i class="fas fa-users text-6xl text-gray-400 mb-4"></i>
-                                <h3 class="text-lg font-medium text-gray-900 mb-2">Aucun utilisateur enregistré</h3>
-                                <p class="text-gray-600 mb-4">Commencez par ajouter votre premier utilisateur</p>
-                                <button onclick="openUtilisateurModal()"
-                                    class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 mx-auto shadow-md">
-                                    <i class="fas fa-plus"></i>
-                                    <span>Ajouter un utilisateur</span>
-                                </button>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if ($totalPages > 1): ?>
-                        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50">
-                            <div class="flex items-center justify-between">
-                                <div class="text-sm text-gray-700 hidden sm:block">
-                                    Affichage de <span class="font-medium"><?= ($page - 1) * $limit + 1 ?></span> à
-                                    <span class="font-medium"><?= min($page * $limit, $total_utilisateurs) ?></span> sur
-                                    <span class="font-medium"><?= $total_utilisateurs ?></span> utilisateurs
-                                </div>
-
-                                <div class="flex items-center space-x-2 mx-auto sm:mx-0">
-                                    <a href="?page=<?= max(1, $page - 1) ?>"
-                                        class="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors <?= $page <= 1 ? 'opacity-50 pointer-events-none' : '' ?>">
-                                        <i class="fas fa-chevron-left"></i>
-                                    </a>
-
-                                    <?php
-                                    $startPage = max(1, $page - 1);
-                                    $endPage = min($totalPages, $page + 1);
-
-                                    for ($i = $startPage; $i <= $endPage; $i++) {
-                                        $isActive = $i == $page;
-                                    ?>
-                                        <a href="?page=<?= $i ?>"
-                                            class="px-3 py-2 rounded-lg text-sm font-medium transition-colors <?= $isActive ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md' : 'text-gray-700 hover:bg-gray-100 border border-gray-300' ?>">
-                                            <?= $i ?>
-                                        </a>
-                                    <?php } ?>
-
-                                    <a href="?page=<?= min($totalPages, $page + 1) ?>"
-                                        class="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors <?= $page >= $totalPages ? 'opacity-50 pointer-events-none' : '' ?>">
-                                        <i class="fas fa-chevron-right"></i>
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="7" class="px-5 py-12 text-center"><i class="fas fa-users text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                                        <p class="text-[var(--text-secondary)] font-medium">Aucun utilisateur</p><button onclick="openUtilisateurModal()" class="mt-4 btn-glass px-4 py-2 rounded-xl text-sm">Ajouter un utilisateur</button>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
 
-            </main>
-        </div>
-    </div>
-    
-    <div id="utilisateurModal" class="modal transition-all duration-300 ease-in-out">
-        <div class="modal-content slide-down p-6">
-            <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <h3 class="text-xl font-bold text-gray-900" id="modalTitle">Ajouter un nouvel utilisateur - NGS</h3>
-                <button onclick="closeUtilisateurModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-2xl"></i>
-                </button>
-            </div>
-            
-            <form id="utilisateurForm" method="POST" action="../models/traitement/user-post.php">
-                <input type="hidden" name="id" id="utilisateurId">
-
-                <div class="space-y-4">
-                    <div>
-                        <label for="nom_utilisateur" class="block text-sm font-medium text-gray-700 mb-1">Nom d'utilisateur</label>
-                        <input type="text" name="nom_utilisateur" id="nom_utilisateur" required
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
-                               placeholder="Ex: admin">
-                    </div>
-                    <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                        <input type="email" name="email" id="email"
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
-                               placeholder="Ex: contact@example.com">
-                    </div>
-                    <div>
-                        <label for="role" class="block text-sm font-medium text-gray-700 mb-1">Rôle</label>
-                        <select name="role" id="role" required
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3">
-                            <option value="">Sélectionnez un rôle</option>
-                            <option value="PDG">PDG (Administrateur)</option>
-                            <option value="IT">IT (Technicien)</option>
-                        </select>
-                    </div>
-                    <div id="passwordField">
-                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-                        <input type="password" name="mot_de_passe" id="password"
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-3"
-                               placeholder="Laisser vide pour ne pas modifier">
-                        <p class="text-xs text-gray-500 mt-1" id="passwordHint">Requis lors de l'ajout. Laisser vide lors de la modification pour conserver l'ancien.</p>
-                    </div>
-                    
-                    <div class="flex items-center space-x-2">
-                        <input type="checkbox" name="actif" id="actif" value="1" checked
-                               class="h-4 w-4 text-secondary border-gray-300 rounded focus:ring-secondary">
-                        <label for="actif" class="text-sm font-medium text-gray-700">Utilisateur actif</label>
-                    </div>
+                <div id="noResults" class="hidden text-center py-12"><i class="fas fa-search text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                    <p class="text-[var(--text-secondary)]">Aucun résultat</p>
                 </div>
 
-                <div class="mt-6 flex justify-end space-x-3">
-                    <button type="button" onclick="closeUtilisateurModal()"
-                            class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
-                        Annuler
-                    </button>
-                    <button type="submit" name="ajouter_utilisateur" id="submitButton"
-                            class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                        Enregistrer l'utilisateur
-                    </button>
-                </div>
-            </form>
+                <?php if ($totalPages > 1): ?>
+                    <div class="px-5 py-4 border-t border-[var(--divider)] flex items-center justify-between">
+                        <span class="text-xs text-[var(--text-muted)] hidden sm:block"><?= ($page - 1) * $limit + 1 ?>-<?= min($page * $limit, $total_utilisateurs) ?> sur <?= $total_utilisateurs ?></span>
+                        <div class="flex items-center gap-1.5 mx-auto sm:mx-0">
+                            <a href="?page=<?= max(1, $page - 1) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page <= 1 ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-left text-xs"></i></a>
+                            <?php for ($i = max(1, $page - 1); $i <= min($totalPages, $page + 1); $i++): ?>
+                                <a href="?page=<?= $i ?>" class="w-8 h-8 rounded-lg text-sm font-medium flex items-center justify-center transition-all <?= $i == $page ? 'btn-glass shadow-md' : 'glass hover:bg-white/20 text-[var(--text-secondary)]' ?>"><?= $i ?></a>
+                            <?php endfor; ?>
+                            <a href="?page=<?= min($totalPages, $page + 1) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page >= $totalPages ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-right text-xs"></i></a>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+
         </div>
+    </main>
+
+    <!-- MODAL AJOUT/MODIF -->
+    <div id="utilisateurOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
+    <div id="utilisateurContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-md p-6">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-lg font-bold text-[var(--text-primary)]" id="modalTitle"><i class="fas fa-user-plus mr-2 text-blue-500"></i>Nouvel utilisateur</h3><button onclick="closeUtilisateurModal()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button>
+        </div>
+        <form method="POST" action="../models/traitement/user-post.php" class="space-y-4">
+            <input type="hidden" name="id" id="utilisateurId">
+            <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Nom d'utilisateur *</label><input type="text" name="nom_utilisateur" id="nom" required class="w-full input-glass px-3 py-2.5 text-sm" placeholder="Ex: admin"></div>
+            <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Email</label><input type="email" name="email" id="email" class="w-full input-glass px-3 py-2.5 text-sm" placeholder="contact@exemple.com"></div>
+            <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Rôle *</label><select name="role" id="role" required class="w-full input-glass px-3 py-2.5 text-sm">
+                    <option value="">Sélectionnez...</option>
+                    <option value="PDG">PDG (Administrateur)</option>
+                    <option value="IT">IT (Technicien)</option>
+                </select></div>
+            <div id="pwdField">
+                <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Mot de passe <span id="pwdRequired" class="text-red-500">*</span></label>
+                <input type="password" name="mot_de_passe" id="password" class="w-full input-glass px-3 py-2.5 text-sm" placeholder="••••••••">
+                <p class="text-xs text-[var(--text-muted)] mt-1" id="pwdHint">Requis lors de l'ajout. Laisser vide pour conserver l'ancien.</p>
+            </div>
+            <div class="flex items-center gap-2"><input type="checkbox" name="actif" id="actif" value="1" checked class="w-4 h-4 rounded border-[var(--input-border)] text-blue-600 focus:ring-blue-500"><label for="actif" class="text-sm text-[var(--text-secondary)]">Utilisateur actif</label></div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="closeUtilisateurModal()" class="px-4 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
+                <button type="submit" name="ajouter_utilisateur" id="submitBtn" class="btn-glass px-5 py-2.5 rounded-xl text-sm">Enregistrer</button>
+            </div>
+        </form>
     </div>
 
-    <div id="toggleModal" class="modal transition-all duration-300 ease-in-out">
-        <div class="modal-content slide-down p-6">
-            <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <h3 class="text-xl font-bold text-gray-900" id="toggleModalTitle">Confirmer l'action - NGS</h3>
-                <button onclick="closeToggleModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-2xl"></i>
-                </button>
-            </div>
-            
-            <div class="text-center py-4">
-                <i id="toggleIcon" class="fas fa-power-off text-5xl mb-4 text-gray-500"></i>
-                <p class="text-lg font-medium text-gray-800 mb-2">Voulez-vous vraiment continuer ?</p>
-                <p class="text-gray-600" id="toggleModalText">Le statut de l'utilisateur **NomUtilisateur** va être modifié.</p>
-            </div>
-
-            <form id="toggleForm" method="POST" action="../models/traitement/utilisateur-post.php" class="mt-6 flex justify-center space-x-3">
-                <input type="hidden" name="id" id="toggleUtilisateurId">
-                <button type="button" onclick="closeToggleModal()"
-                        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
-                    Annuler
-                </button>
-                <button type="submit" name="toggle_actif" id="toggleConfirmButton"
-                        class="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                    Confirmer
-                </button>
-            </form>
-        </div>
+    <!-- MODAL TOGGLE -->
+    <div id="toggleOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
+    <div id="toggleContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-sm p-6 text-center">
+        <i id="toggleIcon" class="fas fa-power-off text-5xl mb-4 text-amber-500"></i>
+        <h3 class="text-lg font-bold text-[var(--text-primary)] mb-2" id="toggleTitle">Changer le statut ?</h3>
+        <p class="text-sm text-[var(--text-secondary)] mb-6" id="toggleText"></p>
+        <form method="POST" action="../models/traitement/utilisateur-post.php" class="flex justify-center gap-3">
+            <input type="hidden" name="id" id="toggleId">
+            <button type="button" onclick="closeToggleModal()" class="px-5 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
+            <button type="submit" name="toggle_actif" id="toggleBtn" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-all">Confirmer</button>
+        </form>
     </div>
 
-    <div id="deleteModal" class="modal transition-all duration-300 ease-in-out">
-        <div class="modal-content slide-down p-6">
-            <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <h3 class="text-xl font-bold text-gray-900">Confirmation de suppression - NGS</h3>
-                <button onclick="closeDeleteModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-2xl"></i>
-                </button>
-            </div>
-            
-            <div class="text-center py-4">
-                <i class="fas fa-trash-alt text-5xl mb-4 text-red-500"></i>
-                <p class="text-lg font-bold text-red-700 mb-2">ATTENTION ! Suppression (Archivage)</p>
-                <p class="text-gray-600 mb-4" id="deleteModalText">Vous êtes sur le point d'archiver l'utilisateur **NomUtilisateur**. Il ne sera plus visible, mais ses données resteront en base de données (Soft Delete).</p>
-            </div>
-
-            <form id="deleteForm" method="POST" action="../models/traitement/utilisateur-post.php" class="mt-6 flex justify-center space-x-3">
-                <input type="hidden" name="id" id="deleteUtilisateurId">
-                <button type="button" onclick="closeDeleteModal()"
-                        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
-                    Annuler
-                </button>
-                <button type="submit" name="supprimer_utilisateur"
-                        class="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                    Oui, Archiver cet utilisateur
-                </button>
-            </form>
-        </div>
+    <!-- MODAL DELETE -->
+    <div id="deleteOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
+    <div id="deleteContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-sm p-6 text-center">
+        <i class="fas fa-trash-alt text-5xl text-red-500 mb-4"></i>
+        <h3 class="text-lg font-bold text-[var(--text-primary)] mb-2">Supprimer cet utilisateur ?</h3>
+        <p class="text-sm text-[var(--text-secondary)] mb-6" id="deleteText"></p>
+        <form method="POST" action="../models/traitement/utilisateur-post.php" class="flex justify-center gap-3">
+            <input type="hidden" name="id" id="deleteId">
+            <button type="button" onclick="closeDeleteModal()" class="px-5 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
+            <button type="submit" name="supprimer_utilisateur" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white text-sm font-semibold hover:opacity-90 transition-all">Supprimer</button>
+        </form>
     </div>
 
     <script>
-        // --- GESTION DE LA SIDEBAR MOBILE ---
-        const mobileMenuButton = document.getElementById('mobileMenuButton');
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('overlay');
+        // Theme
+        const themeToggle = document.getElementById('theme-toggle'),
+            html = document.documentElement;
+        if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme:dark)').matches)) html.classList.add('dark');
+        themeToggle.addEventListener('click', () => {
+            html.classList.toggle('dark');
+            localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light')
+        });
+
+        // Sidebar
+        const sidebar = document.getElementById('sidebar'),
+            overlay = document.getElementById('overlay');
 
         function toggleSidebar() {
-            sidebar.classList.toggle('-translate-x-full');
-            overlay.classList.toggle('hidden');
-            mobileMenuButton.classList.toggle('active');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden')
         }
-
-        mobileMenuButton.addEventListener('click', toggleSidebar);
+        document.getElementById('mobileMenuBtn').addEventListener('click', toggleSidebar);
         overlay.addEventListener('click', toggleSidebar);
 
-        // --- DÉTECTION DU SCROLL DANS LA SIDEBAR ---
-        const sidebarNav = document.querySelector('.sidebar-nav');
-        
-        sidebarNav.addEventListener('scroll', function() {
-            if (this.scrollTop > 10) {
-                this.classList.add('scrolling');
-            } else {
-                this.classList.remove('scrolling');
-            }
-        });
-
-        // --- GESTION DES LIENS ACTIFS ---
-        const currentPage = window.location.pathname.split('/').pop();
-        const navLinks = document.querySelectorAll('.nav-link');
-        
-        navLinks.forEach(link => {
-            const href = link.getAttribute('href');
-            if (href === currentPage) {
-                link.classList.add('active');
-            } else {
-                link.classList.remove('active');
-            }
-        });
-
-        // --- AMÉLIORATION DU COMPORTEMENT DES LIENS ---
-        navLinks.forEach(link => {
-            link.addEventListener('click', function(e) {
-                // Fermer la sidebar sur mobile après clic
-                if (window.innerWidth < 768) {
-                    setTimeout(() => {
-                        toggleSidebar();
-                    }, 200);
-                }
-            });
-        });
-
-        // --- GESTION DU SCROLL RESTAURATION ---
-        if ('scrollRestoration' in history) {
-            history.scrollRestoration = 'manual';
+        // Modals
+        function openModal(o, c) {
+            document.getElementById(o).classList.remove('hidden');
+            document.getElementById(c).classList.remove('hidden')
         }
 
-        // --- NAVIGATION CLAVIER ---
-        document.addEventListener('keydown', function(e) {
-            // Ctrl+B ou Cmd+B pour ouvrir/fermer la sidebar
-            if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-                e.preventDefault();
-                toggleSidebar();
-            }
-            
-            // Échap pour fermer la sidebar
-            if (e.key === 'Escape' && !sidebar.classList.contains('-translate-x-full')) {
-                toggleSidebar();
-            }
-            
-            // Ctrl+F pour focus la recherche
-            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-                e.preventDefault();
-                document.getElementById('searchInput').focus();
-            }
-        });
-
-        // --- AUTO-HIDE DE LA SCROLLBAR QUAND PAS BESOIN ---
-        function checkSidebarScroll() {
-            const nav = document.querySelector('.sidebar-nav');
-            if (nav.scrollHeight <= nav.clientHeight) {
-                nav.style.overflowY = 'hidden';
-            } else {
-                nav.style.overflowY = 'auto';
-            }
+        function closeModal(o, c) {
+            document.getElementById(o).classList.add('hidden');
+            document.getElementById(c).classList.add('hidden')
         }
-
-        window.addEventListener('load', checkSidebarScroll);
-        window.addEventListener('resize', checkSidebarScroll);
-
-        // --- SMOOTH SCROLL POUR LA SIDEBAR ---
-        sidebarNav.style.scrollBehavior = 'smooth';
-
-        // --- GESTION DE LA MODALE AJOUT/MODIF ---
-        const utilisateurModal = document.getElementById('utilisateurModal');
-        const modalTitle = document.getElementById('modalTitle');
-        const utilisateurForm = document.getElementById('utilisateurForm');
-        const submitButton = document.getElementById('submitButton');
-        const utilisateurId = document.getElementById('utilisateurId');
-        const passwordInput = document.getElementById('password');
-        const passwordHint = document.getElementById('passwordHint');
 
         function openUtilisateurModal(id = null) {
-            utilisateurForm.reset();
-            
+            document.getElementById('utilisateurForm')?.reset();
             if (id) {
-                // Mode Modification
-                modalTitle.textContent = "Modifier l'utilisateur #" + id + " - NGS";
-                submitButton.textContent = "Modifier l'utilisateur";
-                utilisateurId.value = id;
-                submitButton.name = 'modifier_utilisateur';
-                passwordInput.required = false; 
-                passwordHint.textContent = "Laisser vide pour conserver le mot de passe actuel.";
-
-                fetch('utilisateurs.php?action=get_utilisateur&id=' + id)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            document.getElementById('nom_utilisateur').value = data.utilisateur.nom_utilisateur;
-                            document.getElementById('email').value = data.utilisateur.email;
-                            document.getElementById('role').value = data.utilisateur.role;
-                            document.getElementById('actif').checked = data.utilisateur.actif == 1;
-                        } else {
-                            alert(data.message);
-                            closeUtilisateurModal();
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Erreur AJAX:', error);
-                        alert("Impossible de charger les données de l'utilisateur.");
-                        closeUtilisateurModal();
-                    });
-
+                document.getElementById('modalTitle').innerHTML = '<i class="fas fa-edit mr-2 text-blue-500"></i>Modifier l\'utilisateur';
+                document.getElementById('submitBtn').textContent = 'Modifier';
+                document.getElementById('submitBtn').name = 'modifier_utilisateur';
+                document.getElementById('utilisateurId').value = id;
+                document.getElementById('password').required = false;
+                document.getElementById('pwdRequired').classList.add('hidden');
+                document.getElementById('pwdHint').textContent = 'Laisser vide pour conserver le mot de passe actuel.';
+                fetch('utilisateurs.php?action=get_utilisateur&id=' + id).then(r => r.json()).then(d => {
+                    if (d.success) {
+                        document.getElementById('nom').value = d.utilisateur.nom_utilisateur;
+                        document.getElementById('email').value = d.utilisateur.email;
+                        document.getElementById('role').value = d.utilisateur.role;
+                        document.getElementById('actif').checked = d.utilisateur.actif == 1;
+                    } else {
+                        alert(d.message);
+                        closeUtilisateurModal()
+                    }
+                });
             } else {
-                // Mode Ajout
-                modalTitle.textContent = "Ajouter un nouvel utilisateur - NGS";
-                submitButton.textContent = "Enregistrer l'utilisateur";
-                utilisateurId.value = '';
-                submitButton.name = 'ajouter_utilisateur';
-                passwordInput.required = true; 
-                passwordHint.textContent = "Requis lors de l'ajout.";
+                document.getElementById('modalTitle').innerHTML = '<i class="fas fa-user-plus mr-2 text-blue-500"></i>Nouvel utilisateur';
+                document.getElementById('submitBtn').textContent = 'Enregistrer';
+                document.getElementById('submitBtn').name = 'ajouter_utilisateur';
+                document.getElementById('utilisateurId').value = '';
+                document.getElementById('password').required = true;
+                document.getElementById('pwdRequired').classList.remove('hidden');
+                document.getElementById('pwdHint').textContent = 'Requis lors de l\'ajout.';
                 document.getElementById('actif').checked = true;
             }
-
-            utilisateurModal.classList.add('show');
+            openModal('utilisateurOverlay', 'utilisateurContent');
         }
 
         function closeUtilisateurModal() {
-            utilisateurModal.classList.remove('show');
+            closeModal('utilisateurOverlay', 'utilisateurContent')
         }
 
-        // --- GESTION DE LA MODALE TOGGLE ---
-        const toggleModal = document.getElementById('toggleModal');
-        const toggleModalTitle = document.getElementById('toggleModalTitle');
-        const toggleModalText = document.getElementById('toggleModalText');
-        const toggleIcon = document.getElementById('toggleIcon');
-        const toggleUtilisateurId = document.getElementById('toggleUtilisateurId');
-        const toggleConfirmButton = document.getElementById('toggleConfirmButton');
-
         function openToggleModal(id, nom, actif) {
+            document.getElementById('toggleId').value = id;
             const action = actif ? 'désactiver' : 'activer';
-            const iconClass = actif ? 'text-orange-500' : 'text-green-500';
-            const buttonColor = actif ? 'bg-gradient-to-r from-orange-600 to-orange-700' : 'bg-gradient-to-r from-green-600 to-green-700';
-            const buttonText = actif ? 'Oui, Désactiver' : 'Oui, Activer';
-
-            toggleModalTitle.textContent = "Confirmer la " + action + " - NGS";
-            toggleModalText.innerHTML = `Le statut de l'utilisateur <strong>${nom}</strong> va passer à <strong>${action}</strong>.<br>Voulez-vous confirmer cette action ?`;
-            
-            toggleIcon.className = `fas fa-power-off text-5xl mb-4 ${iconClass}`;
-            
-            toggleConfirmButton.textContent = buttonText;
-            toggleConfirmButton.className = `px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md ${buttonColor}`;
-
-            toggleUtilisateurId.value = id;
-            toggleModal.classList.add('show');
+            document.getElementById('toggleTitle').textContent = actif ? 'Désactiver l\'utilisateur ?' : 'Activer l\'utilisateur ?';
+            document.getElementById('toggleText').innerHTML = `L'utilisateur <strong>${nom}</strong> sera <strong>${action}</strong>.`;
+            document.getElementById('toggleIcon').className = `fas fa-power-off text-5xl mb-4 ${actif?'text-orange-500':'text-emerald-500'}`;
+            const btn = document.getElementById('toggleBtn');
+            btn.className = actif ? 'px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600 hover:opacity-90 transition-all' : 'px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:opacity-90 transition-all';
+            btn.textContent = actif ? 'Désactiver' : 'Activer';
+            openModal('toggleOverlay', 'toggleContent');
         }
 
         function closeToggleModal() {
-            toggleModal.classList.remove('show');
+            closeModal('toggleOverlay', 'toggleContent')
         }
 
-        // --- GESTION DE LA MODALE DELETE ---
-        const deleteModal = document.getElementById('deleteModal');
-        const deleteModalText = document.getElementById('deleteModalText');
-        const deleteUtilisateurId = document.getElementById('deleteUtilisateurId');
-
         function openDeleteModal(id, nom) {
-            deleteModalText.innerHTML = `Vous êtes sur le point d'archiver l'utilisateur <strong>${nom}</strong>. Il ne sera plus visible, mais ses données resteront en base de données (Soft Delete). Cette action est réversible uniquement par un administrateur système. Confirmez-vous ?`;
-            deleteUtilisateurId.value = id;
-            deleteModal.classList.add('show');
+            document.getElementById('deleteId').value = id;
+            document.getElementById('deleteText').innerHTML = `Vous allez archiver l'utilisateur <strong>${nom}</strong>. Ses données resteront en base (soft delete).`;
+            openModal('deleteOverlay', 'deleteContent');
         }
 
         function closeDeleteModal() {
-            deleteModal.classList.remove('show');
+            closeModal('deleteOverlay', 'deleteContent')
         }
 
-        // --- GESTION DE LA RECHERCHE ---
-        document.getElementById('searchInput').addEventListener('keyup', function() {
-            const searchTerm = this.value.toLowerCase();
-            const rows = document.querySelectorAll('.utilisateur-row');
+        ['utilisateurOverlay', 'toggleOverlay', 'deleteOverlay'].forEach(id => {
+            document.getElementById(id)?.addEventListener('click', function(e) {
+                if (e.target === this) closeModal(id, id.replace('Overlay', 'Content'))
+            });
+        });
+
+        // Search
+        document.getElementById('searchInput')?.addEventListener('keyup', function() {
+            const s = this.value.toLowerCase();
             let found = false;
-
-            rows.forEach(row => {
-                const name = row.dataset.utilisateurName;
-                const email = row.dataset.utilisateurEmail;
-
-                if (name.includes(searchTerm) || email.includes(searchTerm)) {
-                    row.style.display = '';
-                    found = true;
-                } else {
-                    row.style.display = 'none';
-                }
+            document.querySelectorAll('.utilisateur-row').forEach(r => {
+                const m = r.dataset.name.includes(s) || r.dataset.email.includes(s);
+                r.style.display = m ? '' : 'none';
+                if (m) found = true;
             });
-
-            document.getElementById('noResults').classList.toggle('hidden', found);
-            document.getElementById('tableBody').classList.toggle('hidden', !found && searchTerm !== '');
+            document.getElementById('noResults')?.classList.toggle('hidden', found || s === '');
+            document.getElementById('tableBody')?.classList.toggle('hidden', !found && s !== '');
         });
 
-        // --- FONCTION DE RAFRAÎCHISSEMENT ---
-        function refreshPage() {
-            const button = event.target.closest('button');
-            button.classList.add('animate-spin');
-            setTimeout(() => {
-                button.classList.remove('animate-spin');
-                window.location.reload();
-            }, 500);
-        }
-
-        // --- ANIMATION DES LIGNES AU CHARGEMENT ---
-        document.addEventListener('DOMContentLoaded', function() {
-            const rows = document.querySelectorAll('.fade-in-row');
-            rows.forEach((row, index) => {
-                row.style.animationDelay = `${index * 0.05}s`;
-            });
+        // Escape
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closeUtilisateurModal();
+                closeToggleModal();
+                closeDeleteModal();
+                if (sidebar.classList.contains('open')) toggleSidebar()
+            }
         });
-
-        // --- GESTION DES EFFETS VISUELS ---
-        document.querySelectorAll('.stats-card, .nav-link').forEach(element => {
-            element.addEventListener('mouseenter', function() {
-                this.style.transform = 'translateY(-3px)';
-            });
-            
-            element.addEventListener('mouseleave', function() {
-                this.style.transform = 'translateY(0)';
-            });
-        });
-
-        // --- DÉTECTION DE LA CONNEXION ---
-        window.addEventListener('online', function() {
-            showNotification('Vous êtes reconnecté à internet', 'success');
-        });
-
-        window.addEventListener('offline', function() {
-            showNotification('Vous êtes hors ligne', 'warning');
-        });
-
-        function showNotification(message, type) {
-            const notification = document.createElement('div');
-            notification.className = `fixed bottom-4 right-4 p-4 rounded-lg shadow-lg text-white z-50 animate-fade-in ${
-                type === 'success' ? 'bg-green-500' : 'bg-yellow-500'
-            }`;
-            notification.innerHTML = `
-                <div class="flex items-center space-x-2">
-                    <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
-                    <span>${message}</span>
-                </div>
-            `;
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                notification.remove();
-            }, 3000);
-        }
     </script>
+
+    <?php unset($_SESSION['msg']); ?>
 </body>
+
 </html>

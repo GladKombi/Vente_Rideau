@@ -1,194 +1,288 @@
 <?php
-# Connexion à la base de données
 include '../connexion/connexion.php';
 
-// Vérification de l'authentification PDG
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'pdg') {
     header('Location: ../login.php');
     exit;
 }
 
-// Initialisation des variables
 $message = '';
 $message_type = '';
 $total_boutiques = 0;
 $boutiques = [];
 
-// --- GESTION DES MESSAGES VIA SESSIONS ---
 if (isset($_SESSION['flash_message'])) {
     $message = $_SESSION['flash_message']['text'];
     $message_type = $_SESSION['flash_message']['type'];
-    unset($_SESSION['flash_message']); // Supprimer le message après affichage
+    unset($_SESSION['flash_message']);
 }
 
-// Vérifier si c'est une requête AJAX pour récupérer les données d'une boutique (pour édition)
+// AJAX get boutique
 if (isset($_GET['action']) && $_GET['action'] == 'get_boutique' && isset($_GET['id'])) {
-    $boutiqueId = intval($_GET['id']);
-    try {
-        $query = $pdo->prepare("SELECT id, nom, email, actif FROM boutiques WHERE id = ? AND statut = 0");
-        $query->execute([$boutiqueId]);
-        $boutique = $query->fetch(PDO::FETCH_ASSOC);
-
-        if ($boutique) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => true, 'boutique' => $boutique]);
-        } else {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Boutique non trouvée']);
-        }
-    } catch (PDOException $e) {
-        header('Content-Type: application/json');
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Erreur de base de données.']);
-    }
+    $query = $pdo->prepare("SELECT id, nom, email, actif FROM boutiques WHERE id = ? AND statut = 0");
+    $query->execute([(int)$_GET['id']]);
+    $boutique = $query->fetch(PDO::FETCH_ASSOC);
+    header('Content-Type: application/json');
+    echo json_encode($boutique ? ['success' => true, 'boutique' => $boutique] : ['success' => false, 'message' => 'Non trouvée']);
     exit;
 }
 
 // Pagination
 $limit = 10;
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $offset = ($page - 1) * $limit;
 
-// Compter le nombre total de boutiques
 try {
-    $countQuery = $pdo->query("SELECT COUNT(*) FROM boutiques WHERE statut = 0");
-    $total_boutiques = $countQuery->fetchColumn();
+    $total_boutiques = $pdo->query("SELECT COUNT(*) FROM boutiques WHERE statut = 0")->fetchColumn();
     $totalPages = ceil($total_boutiques / $limit);
+    if ($totalPages < 1) $totalPages = 1;
 
-    // Requête paginée
     $query = $pdo->prepare("SELECT * FROM boutiques WHERE statut = 0 ORDER BY actif DESC, date_creation DESC LIMIT :limit OFFSET :offset");
     $query->bindValue(':limit', $limit, PDO::PARAM_INT);
     $query->bindValue(':offset', $offset, PDO::PARAM_INT);
     $query->execute();
-    $boutiques = $query->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Compter les actifs pour la carte de stats
-    $active_count_total = $pdo->query("SELECT COUNT(*) FROM boutiques WHERE actif = 1 AND statut = 0")->fetchColumn();
+    $boutiques = $query->fetchAll();
 
+    $active_count = $pdo->query("SELECT COUNT(*) FROM boutiques WHERE actif = 1 AND statut = 0")->fetchColumn();
 } catch (PDOException $e) {
-    $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des boutiques: " . $e->getMessage(),
-        'type' => "error"
-    ];
-    $active_count_total = 0;
+    $message = "Erreur : " . $e->getMessage();
+    $message_type = 'error';
+    $active_count = 0;
 }
 ?>
 
 <!DOCTYPE html>
-<html lang="fr" class="h-full">
+<html lang="fr" class="scroll-smooth">
 
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>Gestion des boutiques - NGS (New Grace Service)</title>
-    
+    <title>Boutiques - NGS (PDG)</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
 
     <style>
         :root {
-            --primary: #0A2540;
-            --secondary: #7B61FF;
-            --accent: #00D4AA;
-            --light: #F8FAFC;
-            --dark: #1E293B;
+            --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
+            --glass-bg: rgba(255, 255, 255, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.3);
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --text-primary: #1a1a2e;
+            --text-secondary: #4a4a6a;
+            --text-muted: #6b7280;
+            --accent-gradient: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            --input-bg: rgba(255, 255, 255, 0.9);
+            --input-border: rgba(0, 0, 0, 0.1);
+            --divider: rgba(0, 0, 0, 0.06);
+        }
+
+        .dark {
+            --sidebar-bg: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+            --glass-bg: rgba(15, 23, 42, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+            --input-bg: rgba(30, 41, 59, 0.8);
+            --input-border: rgba(255, 255, 255, 0.1);
+            --divider: rgba(255, 255, 255, 0.06);
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F8FAFC;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 50%, #f5f3ff 100%);
+            color: var(--text-primary);
+            transition: background 0.4s ease, color 0.4s ease;
         }
 
-        .font-display {
-            font-family: 'Outfit', sans-serif;
+        .dark body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
         }
 
-        .gradient-bg {
-            background: linear-gradient(135deg, #0A2540 0%, #1E3A5F 100%);
+        .sidebar {
+            background: var(--sidebar-bg);
         }
 
-        .gradient-accent {
-            background: linear-gradient(90deg, #7B61FF 0%, #00D4AA 100%);
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            transition: all 0.3s ease;
         }
 
-        .gradient-blue-btn {
-            background: linear-gradient(90deg, #4F86F7 0%, #1A5A9C 100%); 
-            color: white; 
-            transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+        .premium-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.25rem;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+            transition: all 0.3s ease;
         }
 
-        .gradient-blue-btn:hover {
-            opacity: 0.9;
+        .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        }
+
+        .dark .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .input-glass {
+            background: var(--input-bg);
+            border: 2px solid var(--input-border);
+            color: var(--text-primary);
+            border-radius: 0.75rem;
+            transition: all 0.3s ease;
+        }
+
+        .input-glass:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+            outline: none;
+        }
+
+        .btn-glass {
+            background: var(--accent-gradient);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(30, 58, 138, 0.2);
+        }
+
+        .btn-glass:hover {
             transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(30, 58, 138, 0.35);
         }
 
-        .shadow-soft {
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
+        .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            transition: all 0.3s ease;
+            border-radius: 0.75rem;
         }
 
-        .hover-lift {
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            padding-left: 1.25rem;
         }
 
-        .hover-lift:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+        .nav-link.active {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border-left: 3px solid #60a5fa;
         }
 
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-out;
+        .stat-card {
+            transition: all 0.3s ease;
         }
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
         }
 
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.show {
-            display: flex;
-        }
-
-        .modal-content {
-            background-color: white;
+        .theme-toggle {
+            width: 44px;
+            height: 24px;
+            background: #cbd5e1;
             border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
-            width: 90%;
-            max-height: 90vh;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .dark .theme-toggle {
+            background: #334155;
+        }
+
+        .theme-toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+
+        .dark .theme-toggle::after {
+            transform: translateX(20px);
+            background: #fbbf24;
+        }
+
+        .modal-overlay {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        .modal-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.5rem;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+            max-height: 85vh;
             overflow-y: auto;
         }
 
-        .slide-down {
-            animation: slideDown 0.3s ease-out;
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
         }
 
-        @keyframes slideDown {
+        .badge-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .dark .badge-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+        }
+
+        .dark .badge-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        *:focus-visible {
+            outline: 2px solid #60a5fa;
+            outline-offset: 2px;
+            border-radius: 6px;
+        }
+
+        @keyframes fadeInUp {
             from {
                 opacity: 0;
-                transform: translateY(-20px);
+                transform: translateY(16px);
             }
 
             to {
@@ -197,1089 +291,377 @@ try {
             }
         }
 
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
+        .animate-fade-in-up {
+            animation: fadeInUp 0.4s ease-out forwards;
         }
 
-        .status-active {
-            background-color: #D1FAE5;
-            color: #065F46;
-        }
-
-        .status-inactive {
-            background-color: #FEE2E2;
-            color: #991B1B;
-        }
-        
-        /* Mobile optimizations */
-        .mobile-menu-button {
-            display: none;
-        }
-        
-        .mobile-sidebar {
-            transform: translateX(-100%);
-            transition: transform 0.3s ease;
-            z-index: 1000;
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 100vh;
-            width: 280px;
-            overflow-y: auto;
-        }
-        
-        .mobile-sidebar.active {
-            transform: translateX(0);
-        }
-        
-        .mobile-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 999;
-        }
-        
-        .mobile-overlay.active {
-            display: block;
-        }
-        
-        /* Responsive table */
-        .responsive-table {
-            display: block;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-        
-        .table-mobile-compact td {
-            white-space: nowrap;
-        }
-        
-        /* Card adjustments for mobile */
-        .mobile-card {
-            padding: 1rem;
-        }
-        
-        /* Action buttons for mobile */
-        .action-buttons-mobile {
-            display: flex;
-            gap: 0.25rem;
-        }
-        
-        .action-buttons-mobile button {
-            padding: 0.375rem 0.5rem;
-            font-size: 0.75rem;
-        }
-        
-        /* Mobile text */
-        .mobile-text-sm {
-            font-size: 0.875rem;
-        }
-        
-        .mobile-text-xs {
-            font-size: 0.75rem;
-        }
-        
-        /* Grid adjustments */
         @media (max-width: 768px) {
-            .mobile-menu-button {
-                display: block;
-            }
-            
-            .sidebar:not(.mobile-sidebar) {
-                display: none;
-            }
-            
-            .main-content {
-                margin-left: 0;
-                width: 100%;
-            }
-            
-            header {
-                padding: 1rem !important;
-            }
-            
-            .header-content {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 1rem;
-            }
-            
-            .header-actions {
-                width: 100%;
-                justify-content: space-between;
-            }
-            
-            main {
-                padding: 1rem !important;
-            }
-            
-            .grid-cols-4 {
-                grid-template-columns: repeat(2, 1fr) !important;
-            }
-            
-            .stats-card {
-                padding: 1rem !important;
-                min-height: 120px;
-            }
-            
-            .stats-card .text-3xl {
-                font-size: 1.5rem;
-            }
-            
-            .mobile-hide {
-                display: none;
-            }
-            
-            .mobile-show {
-                display: block !important;
-            }
-            
-            .mobile-flex-col {
-                flex-direction: column;
-            }
-            
-            .mobile-space-y-2 > * + * {
-                margin-top: 0.5rem;
-            }
-            
-            .mobile-gap-2 {
-                gap: 0.5rem;
-            }
-            
-            .mobile-gap-4 {
-                gap: 1rem;
-            }
-            
-            .mobile-w-full {
-                width: 100%;
-            }
-            
-            .mobile-text-center {
-                text-align: center;
-            }
-        }
-        
-        @media (max-width: 640px) {
-            .grid-cols-4 {
-                grid-template-columns: 1fr !important;
-            }
-            
-            .grid-cols-2 {
-                grid-template-columns: 1fr !important;
-            }
-            
-            .header-title h1 {
-                font-size: 1.25rem;
-            }
-            
-            .header-title p {
-                font-size: 0.875rem;
-            }
-            
-            .stats-card .w-12 {
-                width: 2.5rem;
-                height: 2.5rem;
-            }
-            
-            .stats-card .text-3xl {
-                font-size: 1.25rem;
-            }
-            
-            .badge {
-                padding: 0.25rem 0.5rem;
-                font-size: 0.75rem;
-            }
-            
-            table {
-                font-size: 0.875rem;
-            }
-            
-            table th, table td {
-                padding: 0.5rem 0.25rem;
-            }
-            
-            .pagination-info {
-                display: none;
-            }
-            
-            .action-buttons {
-                flex-direction: column;
-                gap: 0.25rem;
-            }
-            
-            .action-buttons button {
-                width: 100%;
-                justify-content: center;
-                font-size: 0.75rem;
-                padding: 0.375rem 0.5rem;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            .header-actions {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 0.5rem;
-            }
-            
-            .header-actions button {
-                width: 100%;
-                justify-content: center;
-            }
-            
-            .mobile-sidebar {
-                width: 100%;
-            }
-            
-            .stats-card {
-                min-height: 110px;
-            }
-            
-            .stats-card .text-3xl {
-                font-size: 1.125rem;
-            }
-            
-            .search-container {
-                flex-direction: column;
-                gap: 0.75rem;
-            }
-            
-            .table-container {
-                margin-left: -0.5rem;
-                margin-right: -0.5rem;
-                width: calc(100% + 1rem);
-            }
-            
-            .modal-content {
-                width: 95%;
-                padding: 1rem;
-            }
-            
-            .action-buttons-mobile {
-                flex-wrap: wrap;
-            }
-            
-            .action-buttons-mobile button {
-                flex: 1;
-                min-width: 70px;
-            }
-        }
-        
-        @media (max-width: 360px) {
-            .stats-card {
-                padding: 0.75rem !important;
-            }
-            
-            .stats-card .w-12 {
-                width: 2rem;
-                height: 2rem;
-            }
-            
-            .stats-card .text-3xl {
-                font-size: 1rem;
-            }
-            
-            .action-buttons-mobile button {
-                font-size: 0.7rem;
-                padding: 0.25rem 0.375rem;
-            }
-        }
-        
-        /* Animation for mobile menu */
-        @keyframes slideIn {
-            from {
+            .sidebar {
                 transform: translateX(-100%);
             }
-            to {
+
+            .sidebar.open {
                 transform: translateX(0);
-            }
-        }
-        
-        .slide-in {
-            animation: slideIn 0.3s ease-out;
-        }
-        
-        /* Touch-friendly elements */
-        button, a {
-            min-height: 44px;
-            min-width: 44px;
-        }
-        
-        input, select, textarea {
-            font-size: 16px !important; /* Prevents zoom on iOS */
-        }
-        
-        /* Better scrolling on mobile */
-        body {
-            -webkit-overflow-scrolling: touch;
-        }
-        
-        /* Hide scrollbar on mobile for cleaner look */
-        @media (max-width: 768px) {
-            .sidebar-nav::-webkit-scrollbar {
-                display: none;
-            }
-            
-            .sidebar-nav {
-                -ms-overflow-style: none;
-                scrollbar-width: none;
             }
         }
     </style>
 </head>
 
-<body class="font-inter min-h-screen bg-gray-50">
-    <!-- Mobile Menu Button -->
-    <button id="mobileMenuButton" class="mobile-menu-button fixed top-4 left-4 z-50 w-10 h-10 rounded-lg bg-white shadow-md flex items-center justify-center md:hidden">
-        <i class="fas fa-bars text-gray-700"></i>
-    </button>
-    
-    <!-- Mobile Overlay -->
-    <div id="mobileOverlay" class="mobile-overlay md:hidden"></div>
-    
-    <div class="flex h-screen">
-        <!-- Desktop Sidebar -->
-        <aside class="hidden md:block w-64 gradient-bg text-white min-h-screen fixed left-0 top-0 h-full">
-            <div class="p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center shadow-lg">
-                        <span class="font-bold text-white text-lg font-display">NGS</span>
-                    </div>
+<body class="h-screen flex overflow-hidden">
+
+    <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
+
+    <!-- SIDEBAR PDG -->
+    <aside id="sidebar" class="sidebar w-64 flex flex-col fixed md:sticky top-0 h-full z-50 transition-transform duration-300 text-white">
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg"><span class="font-bold text-white">NGS</span></div>
+                <div>
+                    <h2 class="font-bold text-sm">NGS Pro</h2>
+                    <p class="text-[10px] text-gray-400">Dashboard PDG</p>
+                </div>
+            </div>
+        </div>
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-400/30 flex items-center justify-center"><i class="fas fa-crown text-amber-400"></i></div>
+                <div class="min-w-0">
+                    <p class="font-semibold text-sm truncate"><?= htmlspecialchars($_SESSION['user_name'] ?? 'PDG') ?></p>
+                </div>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+            <a href="dashboard_pdg.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-line w-4 text-center"></i>Tableau de bord</a>
+            <a href="boutiques.php" class="nav-link active flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-store w-4 text-center"></i>Boutiques<?php if ($total_boutiques > 0): ?><span class="ml-auto bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full"><?= $total_boutiques ?></span><?php endif; ?></a>
+            <a href="produits.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-box w-4 text-center"></i>Produits</a>
+            <a href="stocks.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-warehouse w-4 text-center"></i>Stocks</a>
+            <a href="transferts.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-exchange-alt w-4 text-center"></i>Transferts</a>
+            <a href="utilisateurs.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-users w-4 text-center"></i>Utilisateurs</a>
+            <a href="rapports_pdg.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-bar w-4 text-center"></i>Rapports</a>
+            <a href="realisations.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-images w-4 text-center"></i>Réalisations</a>
+        </nav>
+        <div class="p-3 border-t border-white/10 flex-shrink-0">
+            <div class="flex items-center justify-between px-3 py-2 mb-2"><span class="text-xs text-gray-400"><i class="fas fa-moon mr-1"></i>Thème</span><button id="theme-toggle" class="theme-toggle" aria-label="Changer le thème"></button></div>
+            <a href="../models/logout.php" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors text-sm"><i class="fas fa-sign-out-alt w-4 text-center"></i>Déconnexion</a>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 overflow-y-auto">
+        <header class="sticky top-0 z-30 glass border-b border-white/10">
+            <div class="flex items-center justify-between px-4 md:px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <button id="mobileMenuBtn" class="md:hidden p-2 rounded-lg hover:bg-white/10 transition-colors text-[var(--text-primary)]"><i class="fas fa-bars text-lg"></i></button>
                     <div>
-                        <h1 class="font-display text-xl font-bold">NGS</h1>
-                        <p class="text-xs text-gray-300">New Grace Service - Dashboard PDG</p>
+                        <h1 class="text-lg md:text-xl font-bold text-[var(--text-primary)]">Gestion des Boutiques</h1>
+                        <p class="text-xs text-[var(--text-muted)]">Administration des points de vente</p>
                     </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openBoutiqueModal()" class="btn-glass px-4 py-2 rounded-xl text-sm flex items-center gap-2"><i class="fas fa-plus-circle"></i><span class="hidden sm:inline">Nouvelle boutique</span></button>
+                </div>
+            </div>
+        </header>
+
+        <div class="p-4 md:p-6 space-y-6">
+
+            <?php if ($message): ?>
+                <div class="animate-fade-in-up">
+                    <div class="glass rounded-2xl p-4 border-l-4 <?= $message_type === 'success' ? 'border-emerald-500' : 'border-red-500' ?>">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-<?= $message_type === 'success' ? 'check-circle text-emerald-500' : 'exclamation-circle text-red-500' ?> text-xl"></i>
+                            <span class="text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($message) ?></span>
+                            <button onclick="this.closest('.animate-fade-in-up').remove()" class="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-blue-500" style="animation-delay:0s">
+                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-blue-600 dark:text-blue-400">Total</span>
+                        <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"><i class="fas fa-store text-blue-600 dark:text-blue-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $total_boutiques ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Boutiques</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-emerald-500" style="animation-delay:0.1s">
+                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Actives</span>
+                        <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><i class="fas fa-check-circle text-emerald-600 dark:text-emerald-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $active_count ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Opérationnelles</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-red-500" style="animation-delay:0.2s">
+                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-red-600 dark:text-red-400">Inactives</span>
+                        <div class="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center"><i class="fas fa-times-circle text-red-600 dark:text-red-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $total_boutiques - $active_count ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Désactivées</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-purple-500" style="animation-delay:0.3s">
+                    <div class="flex items-center justify-between mb-2"><span class="text-xs font-medium text-purple-600 dark:text-purple-400">Page</span>
+                        <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center"><i class="fas fa-file-alt text-purple-600 dark:text-purple-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $page ?>/<?= $totalPages ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Pagination</p>
                 </div>
             </div>
 
-            <div class="p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 rounded-full bg-yellow-500/20 border-2 border-yellow-500/30 flex items-center justify-center relative">
-                        <i class="fas fa-crown text-yellow-500 text-lg"></i>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
+            <!-- Recherche -->
+            <div class="premium-card p-4 animate-fade-in-up" style="animation-delay:0.15s">
+                <div class="flex items-center gap-3">
+                    <div class="relative flex-1 max-w-md">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"></i>
+                        <input type="text" id="searchInput" placeholder="Rechercher par nom ou email..." class="w-full input-glass pl-10 pr-4 py-2.5 text-sm">
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-semibold truncate"><?= htmlspecialchars($_SESSION['user_name'] ?? 'PDG') ?></h3>
-                        <p class="text-sm text-gray-300 truncate"><?= htmlspecialchars($_SESSION['user_email'] ?? '') ?></p>
-                    </div>
+                    <span class="text-xs text-[var(--text-muted)] hidden sm:block">Page <?= $page ?>/<?= $totalPages ?></span>
+                    <button onclick="window.location.reload()" class="p-2.5 rounded-xl glass hover:bg-white/20 transition-all text-[var(--text-muted)]" title="Actualiser"><i class="fas fa-sync-alt text-sm"></i></button>
                 </div>
             </div>
 
-            <nav class="p-4 space-y-1">
-                <a href="dashboard_pdg.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors relative">
-                    <i class="fas fa-chart-line w-5 text-gray-300"></i>
-                    <span>Tableau de bord</span>
-                </a>
-                <a href="boutiques.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10">
-                    <i class="fas fa-store w-5 text-white"></i>
-                    <span>Boutiques</span>
-                    <span class="notification-badge"><?= $total_boutiques ?></span>
-                </a>
-                <a href="produits.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-box w-5 text-gray-300"></i>
-                    <span>Produits</span>
-                </a>
-                <a href="stocks.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg">
-                    <i class="fas fa-warehouse w-5 text-white"></i>
-                    <span>Stocks</span>
-                </a>
-                <a href="transferts.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-exchange-alt w-5 text-gray-300"></i>
-                    <span>Transferts</span>
-                </a>
-                <a href="utilisateurs.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-users w-5 text-gray-300"></i>
-                    <span>Utilisateurs</span>
-                </a>
-                <a href="rapports_pdg.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
-                    <i class="fas fa-chart-bar w-5 text-white"></i>
-                    <span>Rapports</span>
-                </a>
-            </nav>
-
-            <div class="p-4 border-t border-white/10 mt-auto">
-                <a href="../models/logout.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-red-500/10 text-red-300 hover:text-red-200 transition-colors">
-                    <i class="fas fa-sign-out-alt w-5"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </aside>
-
-        <!-- Mobile Sidebar -->
-        <aside class="mobile-sidebar md:hidden gradient-bg text-white slide-in">
-            <div class="p-6 border-b border-white/10 flex justify-between items-center">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center shadow-lg">
-                        <span class="font-bold text-white text-lg font-display">NGS</span>
-                    </div>
-                    <div>
-                        <h1 class="font-display text-xl font-bold">NGS</h1>
-                        <p class="text-xs text-gray-300">Dashboard PDG</p>
-                    </div>
-                </div>
-                <button id="closeMobileMenu" class="text-white">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
-            </div>
-
-            <div class="p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-12 h-12 rounded-full bg-yellow-500/20 border-2 border-yellow-500/30 flex items-center justify-center relative">
-                        <i class="fas fa-crown text-yellow-500 text-lg"></i>
-                        <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-semibold truncate"><?= htmlspecialchars($_SESSION['user_name'] ?? 'PDG') ?></h3>
-                        <p class="text-sm text-gray-300 truncate"><?= htmlspecialchars($_SESSION['user_email'] ?? '') ?></p>
-                    </div>
-                </div>
-            </div>
-
-            <nav class="p-4 space-y-1">
-                <a href="dashboard_pdg.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors" onclick="closeMobileMenu()">
-                    <i class="fas fa-chart-line w-5 text-gray-300"></i>
-                    <span>Tableau de bord</span>
-                </a>
-                <a href="boutiques.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10" onclick="closeMobileMenu()">
-                    <i class="fas fa-store w-5 text-white"></i>
-                    <span>Boutiques</span>
-                    <span class="notification-badge"><?= $total_boutiques ?></span>
-                </a>
-                <a href="produits.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors" onclick="closeMobileMenu()">
-                    <i class="fas fa-box w-5 text-gray-300"></i>
-                    <span>Produits</span>
-                </a>
-                <a href="stocks.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg" onclick="closeMobileMenu()">
-                    <i class="fas fa-warehouse w-5 text-white"></i>
-                    <span>Stocks</span>
-                </a>
-                <a href="transferts.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors" onclick="closeMobileMenu()">
-                    <i class="fas fa-exchange-alt w-5 text-gray-300"></i>
-                    <span>Transferts</span>
-                </a>
-                <a href="utilisateurs.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors" onclick="closeMobileMenu()">
-                    <i class="fas fa-users w-5 text-gray-300"></i>
-                    <span>Utilisateurs</span>
-                </a>
-                <a href="rapports_pdg.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg" onclick="closeMobileMenu()">
-                    <i class="fas fa-chart-bar w-5 text-white"></i>
-                    <span>Rapports PDG</span>
-                </a>
-            </nav>
-
-            <div class="p-4 border-t border-white/10 mt-auto">
-                <a href="../models/logout.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-red-500/10 text-red-300 hover:text-red-200 transition-colors" onclick="closeMobileMenu()">
-                    <i class="fas fa-sign-out-alt w-5"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </aside>
-
-        <div class="main-content flex-1 md:ml-64">
-            <header class="bg-white border-b border-gray-200 p-4 md:p-6 sticky top-0 z-30 shadow-sm">
-                <div class="flex justify-between items-center header-content">
-                    <div class="header-title">
-                        <h1 class="text-xl md:text-2xl font-bold text-gray-900 mobile-text-sm">Gestion des boutiques - NGS</h1>
-                        <p class="text-gray-600 text-sm md:text-base mobile-text-xs">New Grace Service - Gérez les boutiques de votre entreprise</p>
-                    </div>
-                    <div class="flex items-center space-x-2 md:space-x-4 header-actions">
-                        <button onclick="openBoutiqueModal()"
-                            class="px-3 md:px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300 mobile-w-full md:w-auto">
-                            <i class="fas fa-plus"></i>
-                            <span class="hidden md:inline">Nouvelle boutique</span>
-                            <span class="md:hidden">Nouveau</span>
-                        </button>
-                    </div>
-                </div>
-            </header>
-
-            <main class="p-4 md:p-6">
-                <?php if ($message): ?>
-                    <div class="mb-4 md:mb-6 fade-in relative z-10 animate-fade-in">
-                        <div class="
-                    <?php if ($message_type === 'success'): ?>bg-green-50 text-green-700 border border-green-200
-                    <?php elseif ($message_type === 'error'): ?>bg-red-50 text-red-700 border border-red-200
-                    <?php elseif ($message_type === 'warning'): ?>bg-yellow-50 text-yellow-700 border border-yellow-200
-                    <?php else: ?>bg-blue-50 text-blue-700 border border-blue-200<?php endif; ?>
-                    rounded-xl p-4 flex items-center justify-between shadow-soft">
-                            <div class="flex items-center space-x-2 md:space-x-3">
-                                <?php if ($message_type === 'success'): ?>
-                                    <i class="fas fa-check-circle text-green-600 text-lg"></i>
-                                <?php elseif ($message_type === 'error'): ?>
-                                    <i class="fas fa-exclamation-circle text-red-600 text-lg"></i>
-                                <?php elseif ($message_type === 'warning'): ?>
-                                    <i class="fas fa-exclamation-triangle text-yellow-600 text-lg"></i>
-                                <?php else: ?>
-                                    <i class="fas fa-info-circle text-blue-600 text-lg"></i>
-                                <?php endif; ?>
-                                <span class="mobile-text-sm"><?= htmlspecialchars($message) ?></span>
-                            </div>
-                            <button onclick="this.parentElement.parentElement.style.display='none'" class="text-gray-400 hover:text-gray-600 transition-colors">
-                                <i class="fas fa-times text-lg"></i>
-                            </button>
-                        </div>
-                    </div>
-                <?php endif; ?>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-4 md:mb-8">
-                    <div class="bg-white rounded-xl md:rounded-2xl shadow-soft p-4 md:p-6 stats-card border-l-4 border-blue-500 animate-fade-in mobile-card">
-                        <div class="flex items-center justify-between mb-3 md:mb-4">
-                            <div class="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-blue-100 flex items-center justify-center">
-                                <i class="fas fa-store text-blue-600 text-lg md:text-xl"></i>
-                            </div>
-                            <span class="text-xs md:text-sm font-medium text-blue-600">Total</span>
-                        </div>
-                        <h3 class="text-2xl md:text-3xl font-bold text-gray-900 mb-1 md:mb-2"><?= $total_boutiques ?></h3>
-                        <p class="text-gray-600 text-sm">Boutiques enregistrées</p>
-                    </div>
-
-                    <div class="bg-white rounded-xl md:rounded-2xl shadow-soft p-4 md:p-6 stats-card border-l-4 border-green-500 animate-fade-in mobile-card" style="animation-delay: 0.1s">
-                        <div class="flex items-center justify-between mb-3 md:mb-4">
-                            <div class="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-green-100 flex items-center justify-center">
-                                <i class="fas fa-check-circle text-green-600 text-lg md:text-xl"></i>
-                            </div>
-                            <span class="text-xs md:text-sm font-medium text-green-600">Actives</span>
-                        </div>
-                        <h3 class="text-2xl md:text-3xl font-bold text-gray-900 mb-1 md:mb-2"><?= $active_count_total ?></h3>
-                        <p class="text-gray-600 text-sm">Boutiques opérationnelles</p>
-                    </div>
-
-                    <div class="bg-white rounded-xl md:rounded-2xl shadow-soft p-4 md:p-6 stats-card border-l-4 border-red-500 animate-fade-in mobile-card" style="animation-delay: 0.2s">
-                        <div class="flex items-center justify-between mb-3 md:mb-4">
-                            <div class="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-red-100 flex items-center justify-center">
-                                <i class="fas fa-times-circle text-red-600 text-lg md:text-xl"></i>
-                            </div>
-                            <span class="text-xs md:text-sm font-medium text-red-600">Inactives</span>
-                        </div>
-                        <h3 class="text-2xl md:text-3xl font-bold text-gray-900 mb-1 md:mb-2"><?= $total_boutiques - $active_count_total ?></h3>
-                        <p class="text-gray-600 text-sm">Boutiques désactivées</p>
-                    </div>
-
-                    <div class="bg-white rounded-xl md:rounded-2xl shadow-soft p-4 md:p-6 stats-card border-l-4 border-purple-500 animate-fade-in mobile-card" style="animation-delay: 0.3s">
-                        <div class="flex items-center justify-between mb-3 md:mb-4">
-                            <div class="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-purple-100 flex items-center justify-center">
-                                <i class="fas fa-file-alt text-purple-600 text-lg md:text-xl"></i>
-                            </div>
-                            <span class="text-xs md:text-sm font-medium text-purple-600">Pagination</span>
-                        </div>
-                        <h3 class="text-2xl md:text-3xl font-bold text-gray-900 mb-1 md:mb-2"><?= $page ?></h3>
-                        <p class="text-gray-600 text-sm">sur <?= $totalPages ?> pages</p>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-soft p-4 md:p-6 mb-4 md:mb-6 animate-fade-in mobile-card" style="animation-delay: 0.4s">
-                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 md:gap-4 search-container">
-                        <div class="relative flex-1 max-w-lg">
-                            <input type="text"
-                                id="searchInput"
-                                placeholder="Rechercher par Nom ou Email..."
-                                class="w-full pl-10 md:pl-12 pr-4 py-2 md:py-3 border border-gray-300 rounded-lg md:rounded-xl focus:ring-2 focus:ring-secondary focus:border-secondary transition-all shadow-sm">
-                            <i class="fas fa-search absolute left-3 md:left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-                        </div>
-
-                        <div class="flex items-center justify-between md:justify-start space-x-2 md:space-x-4">
-                            <div class="text-xs md:text-sm text-gray-600 hidden md:flex items-center space-x-2">
-                                <i class="fas fa-info-circle text-blue-500"></i>
-                                <span>Page <?= $page ?> sur <?= $totalPages ?></span>
-                            </div>
-                            <div class="text-xs text-gray-600 md:hidden">
-                                Page <?= $page ?>/<?= $totalPages ?>
-                            </div>
-                            <button onclick="refreshPage()" class="p-2 text-gray-600 hover:text-blue-600 transition-colors" title="Actualiser">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-xl md:rounded-2xl shadow-soft overflow-hidden animate-fade-in mobile-card" style="animation-delay: 0.5s">
-                    <div class="px-4 md:px-6 py-3 md:py-4 border-b border-gray-200 bg-gray-50">
-                        <h2 class="text-base md:text-lg font-semibold text-gray-900">Liste des boutiques - NGS</h2>
-                    </div>
-
-                    <div class="responsive-table table-container">
-                        <table class="w-full min-w-[700px] mobile-text-sm" id="boutiquesTable">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                                    <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
-                                    <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider mobile-hide">Email</th>
-                                    <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
-                                    <th class="px-3 md:px-6 py-2 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200" id="tableBody">
-                                <?php foreach ($boutiques as $index => $boutique): ?>
-                                    <tr class="boutique-row hover:bg-gray-50 transition-colors fade-in-row"
-                                        data-boutique-name="<?= htmlspecialchars(strtolower($boutique['nom'])) ?>"
-                                        data-boutique-email="<?= htmlspecialchars(strtolower($boutique['email'])) ?>"
-                                        style="animation-delay: <?= $index * 0.05 ?>s">
-                                        <td class="px-3 md:px-6 py-2 md:py-4 whitespace-nowrap text-xs md:text-sm font-medium text-gray-900">#<?= $boutique['id'] ?></td>
-                                        <td class="px-3 md:px-6 py-2 md:py-4 whitespace-nowrap text-xs md:text-sm text-gray-900 boutique-name">
-                                            <div class="flex items-center">
-                                                <div class="w-6 h-6 md:w-8 md:h-8 rounded-full bg-blue-100 flex items-center justify-center mr-2 md:mr-3">
-                                                    <i class="fas fa-store text-blue-600 text-xs"></i>
-                                                </div>
-                                                <span class="truncate max-w-[120px] md:max-w-none"><?= htmlspecialchars($boutique['nom']) ?></span>
+            <!-- Tableau -->
+            <div class="premium-card overflow-hidden animate-fade-in-up" style="animation-delay:0.2s">
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[700px]" id="boutiquesTable">
+                        <thead>
+                            <tr class="border-b border-[var(--divider)] text-left">
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">ID</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Nom</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase hidden sm:table-cell">Email</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Statut</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[var(--divider)]" id="tableBody">
+                            <?php if (!empty($boutiques)): ?>
+                                <?php foreach ($boutiques as $b): ?>
+                                    <tr class="hover:bg-white/5 transition-colors boutique-row" data-name="<?= strtolower($b['nom']) ?>" data-email="<?= strtolower($b['email']) ?>">
+                                        <td class="px-5 py-3.5 text-sm font-mono font-bold text-[var(--text-primary)]">#<?= $b['id'] ?></td>
+                                        <td class="px-5 py-3.5">
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0"><i class="fas fa-store text-blue-600 dark:text-blue-400 text-xs"></i></div>
+                                                <span class="text-sm font-medium text-[var(--text-primary)] truncate max-w-[150px]"><?= htmlspecialchars($b['nom']) ?></span>
                                             </div>
                                         </td>
-                                        <td class="px-3 md:px-6 py-2 md:py-4 whitespace-nowrap text-xs md:text-sm text-gray-900 boutique-email mobile-hide">
-                                            <span class="truncate max-w-[150px] md:max-w-none inline-block"><?= htmlspecialchars($boutique['email']) ?></span>
+                                        <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)] hidden sm:table-cell"><?= htmlspecialchars($b['email']) ?></td>
+                                        <td class="px-5 py-3.5">
+                                            <span class="px-2.5 py-1 rounded-full text-xs font-medium <?= $b['actif'] ? 'badge-success' : 'badge-danger' ?>"><?= $b['actif'] ? 'Active' : 'Inactive' ?></span>
                                         </td>
-                                        
-                                        <td class="px-3 md:px-6 py-2 md:py-4 whitespace-nowrap">
-                                            <span class="status-badge <?= $boutique['actif'] ? 'status-active' : 'status-inactive' ?> inline-flex items-center text-xs">
-                                                <?php if ($boutique['actif']): ?>
-                                                    <i class="fas fa-circle text-[10px] mr-1"></i>
-                                                <?php else: ?>
-                                                    <i class="fas fa-circle text-[10px] mr-1"></i>
-                                                <?php endif; ?>
-                                                <?= $boutique['actif'] ? 'Active' : 'Inactive' ?>
-                                            </span>
-                                        </td>
-                                        <td class="px-3 md:px-6 py-2 md:py-4 whitespace-nowrap text-xs md:text-sm font-medium">
-                                            <div class="flex space-x-1 md:space-x-2 action-buttons action-buttons-mobile">
-                                                <button onclick="openBoutiqueModal(<?= $boutique['id'] ?>); return false;" 
-                                                        class="action-btn inline-flex items-center px-2 md:px-3 py-1 md:py-2 border border-transparent text-xs md:text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
-                                                    <i class="fas fa-edit mr-1"></i>
-                                                    <span class="hidden md:inline">Modifier</span>
-                                                    <span class="md:hidden">Edit</span>
-                                                </button>
-                                                <button onclick="openToggleModal(<?= $boutique['id'] ?>, '<?= htmlspecialchars(addslashes($boutique['nom'])) ?>', <?= $boutique['actif'] ?>); return false;"
-                                                        class="action-btn inline-flex items-center px-2 md:px-3 py-1 md:py-2 border border-transparent text-xs md:text-sm leading-4 font-medium rounded-md text-white <?= $boutique['actif'] ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700' ?> focus:outline-none focus:ring-2 focus:ring-offset-2 <?= $boutique['actif'] ? 'focus:ring-orange-500' : 'focus:ring-green-500' ?> transition-colors">
-                                                    <i class="fas fa-power-off mr-1"></i>
-                                                    <span class="hidden md:inline"><?= $boutique['actif'] ? 'Désactiver' : 'Activer' ?></span>
-                                                    <span class="md:hidden"><?= $boutique['actif'] ? 'Off' : 'On' ?></span>
-                                                </button>
-                                                <button onclick="openDeleteModal(<?= $boutique['id'] ?>, '<?= htmlspecialchars(addslashes($boutique['nom'])) ?>'); return false;"
-                                                        class="action-btn inline-flex items-center px-2 md:px-3 py-1 md:py-2 border border-transparent text-xs md:text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors">
-                                                    <i class="fas fa-trash-alt mr-1"></i>
-                                                    <span class="hidden md:inline">Supprimer</span>
-                                                    <span class="md:hidden">Del</span>
-                                                </button>
+                                        <td class="px-5 py-3.5">
+                                            <div class="flex items-center justify-center gap-1.5">
+                                                <button onclick="openBoutiqueModal(<?= $b['id'] ?>)" class="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors" title="Modifier"><i class="fas fa-edit text-xs"></i></button>
+                                                <button onclick="openToggleModal(<?= $b['id'] ?>,'<?= htmlspecialchars(addslashes($b['nom'])) ?>',<?= $b['actif'] ?>)" class="p-1.5 rounded-lg <?= $b['actif'] ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' ?> hover:bg-opacity-80 transition-colors" title="<?= $b['actif'] ? 'Désactiver' : 'Activer' ?>"><i class="fas fa-power-off text-xs"></i></button>
+                                                <button onclick="openDeleteModal(<?= $b['id'] ?>,'<?= htmlspecialchars(addslashes($b['nom'])) ?>')" class="p-1.5 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors" title="Supprimer"><i class="fas fa-trash text-xs"></i></button>
                                             </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div id="noResults" class="hidden text-center py-8 md:py-12">
-                        <div class="bg-gray-50 rounded-xl md:rounded-2xl p-6 md:p-8 max-w-md mx-auto shadow-soft">
-                            <i class="fas fa-search text-4xl md:text-6xl text-gray-400 mb-3 md:mb-4"></i>
-                            <h3 class="text-base md:text-lg font-medium text-gray-900 mb-2">Aucun résultat trouvé</h3>
-                            <p class="text-gray-600 text-sm">Aucune boutique ne correspond à votre recherche</p>
-                        </div>
-                    </div>
-
-                    <?php if (empty($boutiques) && $page == 1): ?>
-                        <div class="text-center py-8 md:py-12">
-                            <div class="bg-gray-50 rounded-xl md:rounded-2xl p-6 md:p-8 max-w-md mx-auto shadow-soft">
-                                <i class="fas fa-store text-4xl md:text-6xl text-gray-400 mb-3 md:mb-4"></i>
-                                <h3 class="text-base md:text-lg font-medium text-gray-900 mb-2">Aucune boutique enregistrée</h3>
-                                <p class="text-gray-600 text-sm mb-4">Commencez par ajouter votre première boutique</p>
-                                <button onclick="openBoutiqueModal()"
-                                    class="px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 mx-auto shadow-md text-sm">
-                                    <i class="fas fa-plus"></i>
-                                    <span>Ajouter une boutique</span>
-                                </button>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if ($totalPages > 1): ?>
-                        <div class="px-4 md:px-6 py-3 md:py-4 border-t border-gray-200 bg-gray-50">
-                            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 md:gap-0">
-                                <div class="text-xs md:text-sm text-gray-700 pagination-info hidden sm:block">
-                                    Affichage de <span class="font-medium"><?= ($page - 1) * $limit + 1 ?></span> à
-                                    <span class="font-medium"><?= min($page * $limit, $total_boutiques) ?></span> sur
-                                    <span class="font-medium"><?= $total_boutiques ?></span> boutiques
-                                </div>
-
-                                <div class="flex items-center space-x-1 md:space-x-2">
-                                    <a href="?page=<?= max(1, $page - 1) ?>"
-                                        class="px-2 md:px-3 py-1 md:py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors text-sm <?= $page <= 1 ? 'opacity-50 pointer-events-none' : '' ?>">
-                                        <i class="fas fa-chevron-left"></i>
-                                    </a>
-
-                                    <?php
-                                    $startPage = max(1, $page - 1);
-                                    $endPage = min($totalPages, $page + 1);
-
-                                    for ($i = $startPage; $i <= $endPage; $i++) {
-                                        $isActive = $i == $page;
-                                    ?>
-                                        <a href="?page=<?= $i ?>"
-                                            class="px-2 md:px-3 py-1 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors <?= $isActive ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md' : 'text-gray-700 hover:bg-gray-100 border border-gray-300' ?>">
-                                            <?= $i ?>
-                                        </a>
-                                    <?php } ?>
-
-                                    <a href="?page=<?= min($totalPages, $page + 1) ?>"
-                                        class="px-2 md:px-3 py-1 md:py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors text-sm <?= $page >= $totalPages ? 'opacity-50 pointer-events-none' : '' ?>">
-                                        <i class="fas fa-chevron-right"></i>
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="5" class="px-5 py-12 text-center"><i class="fas fa-store-slash text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                                        <p class="text-[var(--text-secondary)] font-medium">Aucune boutique</p><button onclick="openBoutiqueModal()" class="mt-4 btn-glass px-4 py-2 rounded-xl text-sm">Ajouter une boutique</button>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
 
-            </main>
-        </div>
-    </div>
-    
-    <!-- Boutique Modal -->
-    <div id="boutiqueModal" class="modal transition-all duration-300 ease-in-out">
-        <div class="modal-content slide-down p-4 md:p-6">
-            <div class="flex justify-between items-center border-b pb-2 md:pb-3 mb-3 md:mb-4">
-                <h3 class="text-lg md:text-xl font-bold text-gray-900" id="modalTitle">Ajouter une nouvelle boutique - NGS</h3>
-                <button onclick="closeBoutiqueModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-xl md:text-2xl"></i>
-                </button>
-            </div>
-            
-            <form id="boutiqueForm" method="POST" action="../models/traitement/boutique-post.php">
-                <input type="hidden" name="id" id="boutiqueId">
-
-                <div class="space-y-3 md:space-y-4">
-                    <div>
-                        <label for="nom" class="block text-sm font-medium text-gray-700 mb-1">Nom de la boutique</label>
-                        <input type="text" name="nom" id="nom" required
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-2 md:p-3"
-                               placeholder="Ex: Boutique Paris Centre">
-                    </div>
-                    <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email de connexion</label>
-                        <input type="email" name="email" id="email" required
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-2 md:p-3"
-                               placeholder="Ex: contact@boutiqueparis.com">
-                    </div>
-                    <div id="passwordField">
-                        <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Mot de passe</label>
-                        <input type="password" name="password" id="password"
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-secondary focus:border-secondary p-2 md:p-3"
-                               placeholder="Laisser vide pour ne pas modifier">
-                        <p class="text-xs text-gray-500 mt-1" id="passwordHint">Requis lors de l'ajout. Laisser vide lors de la modification pour conserver l'ancien.</p>
-                    </div>
-                    
-                    <div class="flex items-center space-x-2">
-                        <input type="checkbox" name="actif" id="actif" value="1" checked
-                               class="h-4 w-4 text-secondary border-gray-300 rounded focus:ring-secondary">
-                        <label for="actif" class="text-sm font-medium text-gray-700">Boutique active</label>
-                    </div>
+                <div id="noResults" class="hidden text-center py-12"><i class="fas fa-search text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                    <p class="text-[var(--text-secondary)]">Aucun résultat</p>
                 </div>
 
-                <div class="mt-4 md:mt-6 flex justify-end space-x-2 md:space-x-3">
-                    <button type="button" onclick="closeBoutiqueModal()"
-                            class="px-3 md:px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors text-sm">
-                        Annuler
-                    </button>
-                    <button type="submit" name="ajouter_boutique" id="submitButton"
-                            class="px-3 md:px-4 py-2 gradient-blue-btn text-white rounded-lg hover:opacity-90 transition-opacity shadow-md text-sm">
-                        Enregistrer
-                    </button>
-                </div>
-            </form>
+                <?php if ($totalPages > 1): ?>
+                    <div class="px-5 py-4 border-t border-[var(--divider)] flex items-center justify-between">
+                        <span class="text-xs text-[var(--text-muted)] hidden sm:block"><?= ($page - 1) * $limit + 1 ?>-<?= min($page * $limit, $total_boutiques) ?> sur <?= $total_boutiques ?></span>
+                        <div class="flex items-center gap-1.5 mx-auto sm:mx-0">
+                            <a href="?page=<?= max(1, $page - 1) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page <= 1 ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-left text-xs"></i></a>
+                            <?php for ($i = max(1, $page - 1); $i <= min($totalPages, $page + 1); $i++): ?>
+                                <a href="?page=<?= $i ?>" class="w-8 h-8 rounded-lg text-sm font-medium flex items-center justify-center transition-all <?= $i == $page ? 'btn-glass shadow-md' : 'glass hover:bg-white/20 text-[var(--text-secondary)]' ?>"><?= $i ?></a>
+                            <?php endfor; ?>
+                            <a href="?page=<?= min($totalPages, $page + 1) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page >= $totalPages ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-right text-xs"></i></a>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+
         </div>
+    </main>
+
+    <!-- MODAL AJOUT/MODIF -->
+    <div id="boutiqueOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
+    <div id="boutiqueContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-md p-6">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-lg font-bold text-[var(--text-primary)]" id="modalTitle"><i class="fas fa-plus-circle mr-2 text-blue-500"></i>Nouvelle boutique</h3><button onclick="closeBoutiqueModal()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button>
+        </div>
+        <form method="POST" action="../models/traitement/boutique-post.php" class="space-y-4">
+            <input type="hidden" name="id" id="boutiqueId">
+            <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Nom *</label><input type="text" name="nom" id="nom" required class="w-full input-glass px-3 py-2.5 text-sm" placeholder="Ex: Boutique Centre"></div>
+            <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Email *</label><input type="email" name="email" id="email" required class="w-full input-glass px-3 py-2.5 text-sm" placeholder="contact@boutique.com"></div>
+            <div id="pwdField">
+                <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Mot de passe <span id="pwdRequired" class="text-red-500">*</span></label>
+                <input type="password" name="password" id="password" class="w-full input-glass px-3 py-2.5 text-sm" placeholder="••••••••">
+                <p class="text-xs text-[var(--text-muted)] mt-1" id="pwdHint">Requis lors de l'ajout. Laisser vide pour conserver l'ancien.</p>
+            </div>
+            <div class="flex items-center gap-2"><input type="checkbox" name="actif" id="actif" value="1" checked class="w-4 h-4 rounded border-[var(--input-border)] text-blue-600 focus:ring-blue-500"><label for="actif" class="text-sm text-[var(--text-secondary)]">Boutique active</label></div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="closeBoutiqueModal()" class="px-4 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
+                <button type="submit" name="ajouter_boutique" id="submitBtn" class="btn-glass px-5 py-2.5 rounded-xl text-sm">Enregistrer</button>
+            </div>
+        </form>
     </div>
 
-    <!-- Toggle Modal -->
-    <div id="toggleModal" class="modal transition-all duration-300 ease-in-out">
-        <div class="modal-content slide-down p-4 md:p-6">
-            <div class="flex justify-between items-center border-b pb-2 md:pb-3 mb-3 md:mb-4">
-                <h3 class="text-lg md:text-xl font-bold text-gray-900" id="toggleModalTitle">Confirmer l'action - NGS</h3>
-                <button onclick="closeToggleModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-xl md:text-2xl"></i>
-                </button>
-            </div>
-            
-            <div class="text-center py-3 md:py-4">
-                <i id="toggleIcon" class="fas fa-power-off text-4xl md:text-5xl mb-3 md:mb-4 text-gray-500"></i>
-                <p class="text-base md:text-lg font-medium text-gray-800 mb-1 md:mb-2">Voulez-vous vraiment continuer ?</p>
-                <p class="text-gray-600 text-sm md:text-base" id="toggleModalText">Le statut de la boutique **NomBoutique** va être modifié.</p>
-            </div>
-
-            <form id="toggleForm" method="POST" action="../models/traitement/boutique-post.php" class="mt-4 md:mt-6 flex justify-center space-x-2 md:space-x-3">
-                <input type="hidden" name="id" id="toggleBoutiqueId">
-                <button type="button" onclick="closeToggleModal()"
-                        class="px-3 md:px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors text-sm">
-                    Annuler
-                </button>
-                <button type="submit" name="toggle_actif" id="toggleConfirmButton"
-                        class="px-3 md:px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md text-sm">
-                    Confirmer
-                </button>
-            </form>
-        </div>
+    <!-- MODAL TOGGLE -->
+    <div id="toggleOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
+    <div id="toggleContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-sm p-6 text-center">
+        <i id="toggleIcon" class="fas fa-power-off text-5xl mb-4 text-amber-500"></i>
+        <h3 class="text-lg font-bold text-[var(--text-primary)] mb-2" id="toggleTitle">Changer le statut ?</h3>
+        <p class="text-sm text-[var(--text-secondary)] mb-6" id="toggleText"></p>
+        <form method="POST" action="../models/traitement/boutique-post.php" class="flex justify-center gap-3">
+            <input type="hidden" name="id" id="toggleId">
+            <button type="button" onclick="closeToggleModal()" class="px-5 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
+            <button type="submit" name="toggle_actif" id="toggleBtn" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-white hover:opacity-90 transition-all">Confirmer</button>
+        </form>
     </div>
 
-    <!-- Delete Modal -->
-    <div id="deleteModal" class="modal transition-all duration-300 ease-in-out">
-        <div class="modal-content slide-down p-4 md:p-6">
-            <div class="flex justify-between items-center border-b pb-2 md:pb-3 mb-3 md:mb-4">
-                <h3 class="text-lg md:text-xl font-bold text-gray-900">Confirmation de suppression - NGS</h3>
-                <button onclick="closeDeleteModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-xl md:text-2xl"></i>
-                </button>
-            </div>
-            
-            <div class="text-center py-3 md:py-4">
-                <i class="fas fa-trash-alt text-4xl md:text-5xl mb-3 md:mb-4 text-red-500"></i>
-                <p class="text-base md:text-lg font-bold text-red-700 mb-1 md:mb-2">ATTENTION ! Suppression (Archivage)</p>
-                <p class="text-gray-600 text-sm md:text-base mb-3 md:mb-4" id="deleteModalText">Vous êtes sur le point d'archiver la boutique **NomBoutique**. Elle ne sera plus visible, mais ses données resteront en base de données (Soft Delete).</p>
-            </div>
-
-            <form id="deleteForm" method="POST" action="../models/traitement/boutique-post.php" class="mt-4 md:mt-6 flex justify-center space-x-2 md:space-x-3">
-                <input type="hidden" name="id" id="deleteBoutiqueId">
-                <button type="button" onclick="closeDeleteModal()"
-                        class="px-3 md:px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors text-sm">
-                    Annuler
-                </button>
-                <button type="submit" name="supprimer_boutique"
-                        class="px-3 md:px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md text-sm">
-                    Oui, Archiver
-                </button>
-            </form>
-        </div>
+    <!-- MODAL DELETE -->
+    <div id="deleteOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
+    <div id="deleteContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-sm p-6 text-center">
+        <i class="fas fa-trash-alt text-5xl text-red-500 mb-4"></i>
+        <h3 class="text-lg font-bold text-[var(--text-primary)] mb-2">Supprimer cette boutique ?</h3>
+        <p class="text-sm text-[var(--text-secondary)] mb-6" id="deleteText"></p>
+        <form method="POST" action="../models/traitement/boutique-post.php" class="flex justify-center gap-3">
+            <input type="hidden" name="id" id="deleteId">
+            <button type="button" onclick="closeDeleteModal()" class="px-5 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
+            <button type="submit" name="supprimer_boutique" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white text-sm font-semibold hover:opacity-90 transition-all">Supprimer</button>
+        </form>
     </div>
 
     <script>
-        // Mobile menu functionality
-        const mobileMenuButton = document.getElementById('mobileMenuButton');
-        const mobileSidebar = document.querySelector('.mobile-sidebar');
-        const mobileOverlay = document.getElementById('mobileOverlay');
-        const closeMobileMenuBtn = document.getElementById('closeMobileMenu');
-        
-        function openMobileMenu() {
-            mobileSidebar.classList.add('active');
-            mobileOverlay.classList.add('active');
-            document.body.style.overflow = 'hidden';
-        }
-        
-        function closeMobileMenu() {
-            mobileSidebar.classList.remove('active');
-            mobileOverlay.classList.remove('active');
-            document.body.style.overflow = '';
-        }
-        
-        if (mobileMenuButton) {
-            mobileMenuButton.addEventListener('click', openMobileMenu);
-        }
-        
-        if (closeMobileMenuBtn) {
-            closeMobileMenuBtn.addEventListener('click', closeMobileMenu);
-        }
-        
-        if (mobileOverlay) {
-            mobileOverlay.addEventListener('click', closeMobileMenu);
-        }
-        
-        // Close menu on resize to desktop
-        window.addEventListener('resize', function() {
-            if (window.innerWidth >= 768) {
-                closeMobileMenu();
-            }
+        // Theme
+        const themeToggle = document.getElementById('theme-toggle'),
+            html = document.documentElement;
+        if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme:dark)').matches)) html.classList.add('dark');
+        themeToggle.addEventListener('click', () => {
+            html.classList.toggle('dark');
+            localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light')
         });
-        
-        // Expose function globally for menu links
-        window.closeMobileMenu = closeMobileMenu;
-        
-        // --- GESTION DE LA MODALE AJOUT/MODIF ---
-        const boutiqueModal = document.getElementById('boutiqueModal');
-        const modalTitle = document.getElementById('modalTitle');
-        const boutiqueForm = document.getElementById('boutiqueForm');
-        const submitButton = document.getElementById('submitButton');
-        const boutiqueId = document.getElementById('boutiqueId');
-        const passwordInput = document.getElementById('password');
-        const passwordHint = document.getElementById('passwordHint');
+
+        // Sidebar
+        const sidebar = document.getElementById('sidebar'),
+            overlay = document.getElementById('overlay');
+
+        function toggleSidebar() {
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden')
+        }
+        document.getElementById('mobileMenuBtn').addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
+
+        // Modals
+        function openModal(o, c) {
+            document.getElementById(o).classList.remove('hidden');
+            document.getElementById(c).classList.remove('hidden')
+        }
+
+        function closeModal(o, c) {
+            document.getElementById(o).classList.add('hidden');
+            document.getElementById(c).classList.add('hidden')
+        }
 
         function openBoutiqueModal(id = null) {
-            boutiqueForm.reset();
-            closeMobileMenu();
-            
+            document.getElementById('boutiqueForm')?.reset();
             if (id) {
-                // Mode Modification
-                modalTitle.textContent = "Modifier la boutique #" + id + " - NGS";
-                submitButton.textContent = "Modifier la boutique";
-                boutiqueId.value = id;
-                submitButton.name = 'modifier_boutique';
-                passwordInput.required = false; 
-                passwordHint.textContent = "Laisser vide pour conserver le mot de passe actuel.";
-
-                fetch('boutiques.php?action=get_boutique&id=' + id)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            document.getElementById('nom').value = data.boutique.nom;
-                            document.getElementById('email').value = data.boutique.email;
-                            document.getElementById('actif').checked = data.boutique.actif == 1;
-                        } else {
-                            alert(data.message);
-                            closeBoutiqueModal();
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Erreur AJAX:', error);
-                        alert("Impossible de charger les données de la boutique.");
-                        closeBoutiqueModal();
-                    });
-
+                document.getElementById('modalTitle').innerHTML = '<i class="fas fa-edit mr-2 text-blue-500"></i>Modifier la boutique';
+                document.getElementById('submitBtn').textContent = 'Modifier';
+                document.getElementById('submitBtn').name = 'modifier_boutique';
+                document.getElementById('boutiqueId').value = id;
+                document.getElementById('password').required = false;
+                document.getElementById('pwdRequired').classList.add('hidden');
+                document.getElementById('pwdHint').textContent = 'Laisser vide pour conserver le mot de passe actuel.';
+                fetch('boutiques.php?action=get_boutique&id=' + id).then(r => r.json()).then(d => {
+                    if (d.success) {
+                        document.getElementById('nom').value = d.boutique.nom;
+                        document.getElementById('email').value = d.boutique.email;
+                        document.getElementById('actif').checked = d.boutique.actif == 1
+                    }
+                });
             } else {
-                // Mode Ajout
-                modalTitle.textContent = "Ajouter une nouvelle boutique - NGS";
-                submitButton.textContent = "Enregistrer la boutique";
-                boutiqueId.value = '';
-                submitButton.name = 'ajouter_boutique';
-                passwordInput.required = true; 
-                passwordHint.textContent = "Requis lors de l'ajout.";
+                document.getElementById('modalTitle').innerHTML = '<i class="fas fa-plus-circle mr-2 text-blue-500"></i>Nouvelle boutique';
+                document.getElementById('submitBtn').textContent = 'Enregistrer';
+                document.getElementById('submitBtn').name = 'ajouter_boutique';
+                document.getElementById('boutiqueId').value = '';
+                document.getElementById('password').required = true;
+                document.getElementById('pwdRequired').classList.remove('hidden');
+                document.getElementById('pwdHint').textContent = 'Requis lors de l\'ajout.';
                 document.getElementById('actif').checked = true;
             }
-
-            boutiqueModal.classList.add('show');
+            openModal('boutiqueOverlay', 'boutiqueContent');
         }
 
         function closeBoutiqueModal() {
-            boutiqueModal.classList.remove('show');
+            closeModal('boutiqueOverlay', 'boutiqueContent')
         }
 
-        // --- GESTION DE LA MODALE TOGGLE ---
-        const toggleModal = document.getElementById('toggleModal');
-        const toggleModalTitle = document.getElementById('toggleModalTitle');
-        const toggleModalText = document.getElementById('toggleModalText');
-        const toggleIcon = document.getElementById('toggleIcon');
-        const toggleBoutiqueId = document.getElementById('toggleBoutiqueId');
-        const toggleConfirmButton = document.getElementById('toggleConfirmButton');
-
         function openToggleModal(id, nom, actif) {
+            document.getElementById('toggleId').value = id;
             const action = actif ? 'désactiver' : 'activer';
-            const iconClass = actif ? 'text-orange-500' : 'text-green-500';
-            const buttonColor = actif ? 'bg-gradient-to-r from-orange-600 to-orange-700' : 'bg-gradient-to-r from-green-600 to-green-700';
-            const buttonText = actif ? 'Oui, Désactiver' : 'Oui, Activer';
-
-            toggleModalTitle.textContent = "Confirmer la " + action + " - NGS";
-            toggleModalText.innerHTML = `Le statut de la boutique <strong>${nom}</strong> va passer à <strong>${action}</strong>.<br>Voulez-vous confirmer cette action ?`;
-            
-            toggleIcon.className = `fas fa-power-off text-4xl md:text-5xl mb-3 md:mb-4 ${iconClass}`;
-            
-            toggleConfirmButton.textContent = buttonText;
-            toggleConfirmButton.className = `px-3 md:px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md text-sm ${buttonColor}`;
-
-            toggleBoutiqueId.value = id;
-            toggleModal.classList.add('show');
+            document.getElementById('toggleTitle').textContent = actif ? 'Désactiver la boutique ?' : 'Activer la boutique ?';
+            document.getElementById('toggleText').innerHTML = `La boutique <strong>${nom}</strong> sera <strong>${action}</strong>.`;
+            document.getElementById('toggleIcon').className = `fas fa-power-off text-5xl mb-4 ${actif?'text-orange-500':'text-emerald-500'}`;
+            const btn = document.getElementById('toggleBtn');
+            btn.className = actif ? 'px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600 hover:opacity-90 transition-all' : 'px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:opacity-90 transition-all';
+            btn.textContent = actif ? 'Désactiver' : 'Activer';
+            openModal('toggleOverlay', 'toggleContent');
         }
 
         function closeToggleModal() {
-            toggleModal.classList.remove('show');
+            closeModal('toggleOverlay', 'toggleContent')
         }
 
-        // --- GESTION DE LA MODALE DELETE ---
-        const deleteModal = document.getElementById('deleteModal');
-        const deleteModalText = document.getElementById('deleteModalText');
-        const deleteBoutiqueId = document.getElementById('deleteBoutiqueId');
-
         function openDeleteModal(id, nom) {
-            deleteModalText.innerHTML = `Vous êtes sur le point d'archiver la boutique <strong>${nom}</strong>. Elle ne sera plus visible, mais ses données resteront en base de données (Soft Delete). Cette action est réversible uniquement par un administrateur système. Confirmez-vous ?`;
-            deleteBoutiqueId.value = id;
-            deleteModal.classList.add('show');
+            document.getElementById('deleteId').value = id;
+            document.getElementById('deleteText').innerHTML = `Vous allez archiver la boutique <strong>${nom}</strong>. Ses données resteront en base (soft delete).`;
+            openModal('deleteOverlay', 'deleteContent');
         }
 
         function closeDeleteModal() {
-            deleteModal.classList.remove('show');
+            closeModal('deleteOverlay', 'deleteContent')
         }
 
-        // --- GESTION DE LA RECHERCHE ---
-        document.getElementById('searchInput').addEventListener('keyup', function() {
-            const searchTerm = this.value.toLowerCase();
-            const rows = document.querySelectorAll('.boutique-row');
+        ['boutiqueOverlay', 'toggleOverlay', 'deleteOverlay'].forEach(id => {
+            document.getElementById(id)?.addEventListener('click', function(e) {
+                if (e.target === this) closeModal(id, id.replace('Overlay', 'Content'))
+            });
+        });
+
+        // Search
+        document.getElementById('searchInput')?.addEventListener('keyup', function() {
+            const s = this.value.toLowerCase();
             let found = false;
-
-            rows.forEach(row => {
-                const name = row.dataset.boutiqueName;
-                const email = row.dataset.boutiqueEmail;
-
-                if (name.includes(searchTerm) || email.includes(searchTerm)) {
-                    row.style.display = '';
-                    found = true;
-                } else {
-                    row.style.display = 'none';
-                }
+            document.querySelectorAll('.boutique-row').forEach(r => {
+                const m = r.dataset.name.includes(s) || r.dataset.email.includes(s);
+                r.style.display = m ? '' : 'none';
+                if (m) found = true;
             });
-
-            document.getElementById('noResults').classList.toggle('hidden', found);
-            document.getElementById('tableBody').classList.toggle('hidden', !found && searchTerm !== '');
+            document.getElementById('noResults')?.classList.toggle('hidden', found || s === '');
+            document.getElementById('tableBody')?.classList.toggle('hidden', !found && s !== '');
         });
 
-        // --- FONCTION DE RAFRAÎCHISSEMENT ---
-        function refreshPage() {
-            const button = event.target.closest('button');
-            button.classList.add('animate-spin');
-            setTimeout(() => {
-                button.classList.remove('animate-spin');
-                window.location.reload();
-            }, 500);
-        }
-
-        // --- ANIMATION DES LIGNES AU CHARGEMENT ---
-        document.addEventListener('DOMContentLoaded', function() {
-            const rows = document.querySelectorAll('.fade-in-row');
-            rows.forEach((row, index) => {
-                row.style.animationDelay = `${index * 0.05}s`;
-            });
-        });
-
-        // Close modals with escape key
-        document.addEventListener('keydown', function(e) {
+        // Escape
+        document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
                 closeBoutiqueModal();
                 closeToggleModal();
                 closeDeleteModal();
+                if (sidebar.classList.contains('open')) toggleSidebar()
             }
         });
-
-        // Prevent body scroll when modals are open
-        const modals = document.querySelectorAll('.modal');
-        modals.forEach(modal => {
-            modal.addEventListener('show', function() {
-                document.body.style.overflow = 'hidden';
-            });
-            
-            modal.addEventListener('hide', function() {
-                document.body.style.overflow = '';
-            });
-        });
-
-        // Close modal when clicking outside
-        window.addEventListener('click', function(event) {
-            if (event.target.classList.contains('modal')) {
-                closeBoutiqueModal();
-                closeToggleModal();
-                closeDeleteModal();
-            }
-        });
-
-        // Touch optimization for mobile
-        if ('ontouchstart' in window) {
-            // Add touch feedback to buttons
-            const buttons = document.querySelectorAll('button, a');
-            buttons.forEach(button => {
-                button.addEventListener('touchstart', function() {
-                    this.style.opacity = '0.8';
-                });
-                
-                button.addEventListener('touchend', function() {
-                    this.style.opacity = '1';
-                });
-            });
-        }
     </script>
+
+    <?php unset($_SESSION['msg']); ?>
 </body>
+
 </html>

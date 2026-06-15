@@ -2,238 +2,98 @@
 # Connexion à la base de données
 include '../connexion/connexion.php';
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 // Vérification de l'authentification BOUTIQUE
 if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'boutique') {
     header('Location: ../login.php');
     exit;
 }
 
-// Récupérer l'ID de la boutique connectée
 $boutique_id = $_SESSION['boutique_id'] ?? null;
 if (!$boutique_id) {
     header('Location: ../login.php');
     exit;
 }
 
-// Initialisation des variables
 $message = '';
 $message_type = '';
 $total_commandes = 0;
 $commandes = [];
 
-// --- GESTION DES MESSAGES VIA SESSIONS ---
 if (isset($_SESSION['flash_message'])) {
     $message = $_SESSION['flash_message']['text'];
     $message_type = $_SESSION['flash_message']['type'];
     unset($_SESSION['flash_message']);
 }
 
-// NOUVELLE VERSION : Générer un numéro de facture unique sans date
-function generateNumeroFacture($pdo, $boutique_id) {
+// Générer un numéro de facture unique
+function generateNumeroFacture($pdo, $boutique_id)
+{
     $prefix = 'FACT-B' . $boutique_id . '-';
-    
-    // Trouver le dernier numéro de facture pour cette boutique (toutes factures confondues)
-    $query = $pdo->prepare("
-        SELECT numero_facture 
-        FROM commandes 
-        WHERE numero_facture LIKE ? 
-        ORDER BY id DESC 
-        LIMIT 1
-    ");
-    $likePattern = $prefix . '%';
-    $query->execute([$likePattern]);
+    $query = $pdo->prepare("SELECT numero_facture FROM commandes WHERE numero_facture LIKE ? ORDER BY id DESC LIMIT 1");
+    $query->execute([$prefix . '%']);
     $lastFacture = $query->fetch(PDO::FETCH_ASSOC);
-    
-    if ($lastFacture && !empty($lastFacture['numero_facture'])) {
-        // Extraire le numéro incrémental du dernier numéro (ex: FACT-B1-001)
-        $matches = [];
-        if (preg_match('/-(\d+)$/', $lastFacture['numero_facture'], $matches)) {
-            $lastNumber = (int)$matches[1];
-            $nextNumber = $lastNumber + 1;
-        } else {
-            // Si le format est incorrect, prendre le prochain numéro basé sur le comptage
-            $countQuery = $pdo->prepare("
-                SELECT COUNT(*) as count 
-                FROM commandes 
-                WHERE numero_facture LIKE ?
-            ");
-            $countQuery->execute([$likePattern]);
-            $result = $countQuery->fetch(PDO::FETCH_ASSOC);
-            $nextNumber = ($result['count'] ?? 0) + 1;
-        }
-    } else {
-        // Première facture pour cette boutique
-        $nextNumber = 1;
+    if ($lastFacture && preg_match('/-(\d+)$/', $lastFacture['numero_facture'], $m)) {
+        return $prefix . str_pad((int)$m[1] + 1, 3, '0', STR_PAD_LEFT);
     }
-    
-    return $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+    return $prefix . '001';
 }
 
-// --- TRAITEMENT DU FORMULAIRE D'AJOUT/MODIFICATION ---
+// --- TRAITEMENT DES FORMULAIRES ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['ajouter_commande'])) {
-        // Ajouter une nouvelle commande
         try {
             $numero_facture = generateNumeroFacture($pdo, $boutique_id);
-            
-            // Vérifier que le numéro n'existe pas déjà (sécurité supplémentaire)
             $checkQuery = $pdo->prepare("SELECT COUNT(*) FROM commandes WHERE numero_facture = ?");
             $checkQuery->execute([$numero_facture]);
-            
             if ($checkQuery->fetchColumn() > 0) {
-                // Si le numéro existe déjà, on prend le suivant
-                $matches = [];
-                if (preg_match('/-(\d+)$/', $numero_facture, $matches)) {
-                    $nextNumber = (int)$matches[1] + 1;
-                    $prefix = substr($numero_facture, 0, strrpos($numero_facture, '-') + 1);
-                    $numero_facture = $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+                if (preg_match('/-(\d+)$/', $numero_facture, $m)) {
+                    $numero_facture = substr($numero_facture, 0, strrpos($numero_facture, '-') + 1) . str_pad((int)$m[1] + 1, 3, '0', STR_PAD_LEFT);
                 }
             }
-            
-            $query = $pdo->prepare("
-                INSERT INTO commandes (numero_facture, client_nom, boutique_id, date_commande)
-                VALUES (?, ?, ?, NOW())
-            ");
-            
-            $query->execute([
-                $numero_facture,
-                $_POST['client_nom'] ?? '',
-                $boutique_id
-            ]);
-            
+            $query = $pdo->prepare("INSERT INTO commandes (numero_facture, client_nom, boutique_id, date_commande) VALUES (?, ?, ?, NOW())");
+            $query->execute([$numero_facture, $_POST['client_nom'] ?? '', $boutique_id]);
             $commande_id = $pdo->lastInsertId();
-            
-            $_SESSION['flash_message'] = [
-                'text' => "Commande #$numero_facture créée avec succès !",
-                'type' => "success"
-            ];
-            
-            // Rediriger vers la page de détails de la commande pour ajouter des produits
+            $_SESSION['flash_message'] = ['text' => "Commande #$numero_facture créée !", 'type' => "success"];
             header("Location: commande_details.php?id=$commande_id");
             exit;
-            
         } catch (PDOException $e) {
-            $_SESSION['flash_message'] = [
-                'text' => "Erreur lors de la création de la commande: " . $e->getMessage(),
-                'type' => "error"
-            ];
+            $message = "Erreur : " . $e->getMessage();
+            $message_type = 'error';
         }
-    }
-    
-    elseif (isset($_POST['modifier_commande'])) {
-        // Modifier une commande existante
+    } elseif (isset($_POST['modifier_commande'])) {
         try {
-            $query = $pdo->prepare("
-                UPDATE commandes 
-                SET client_nom = ?
-                WHERE id = ? AND boutique_id = ? AND statut = 0
-            ");
-            
-            $query->execute([
-                $_POST['client_nom'] ?? '',
-                $_POST['commande_id'],
-                $boutique_id
-            ]);
-            
-            $_SESSION['flash_message'] = [
-                'text' => "Commande modifiée avec succès !",
-                'type' => "success"
-            ];
-            
+            $query = $pdo->prepare("UPDATE commandes SET client_nom = ? WHERE id = ? AND boutique_id = ? AND statut = 0");
+            $query->execute([$_POST['client_nom'] ?? '', $_POST['commande_id'], $boutique_id]);
+            $_SESSION['flash_message'] = ['text' => "Commande modifiée !", 'type' => "success"];
             header("Location: ventes_boutique.php");
             exit;
-            
         } catch (PDOException $e) {
-            $_SESSION['flash_message'] = [
-                'text' => "Erreur lors de la modification: " . $e->getMessage(),
-                'type' => "error"
-            ];
+            $message = "Erreur : " . $e->getMessage();
+            $message_type = 'error';
         }
-    }
-    
-    elseif (isset($_POST['changer_etat'])) {
-        // Changer l'état de la commande (brouillon -> payée)
+    } elseif (isset($_POST['archiver_commande'])) {
         try {
-            $query = $pdo->prepare("
-                UPDATE commandes 
-                SET etat = ?
-                WHERE id = ? AND boutique_id = ? AND statut = 0
-            ");
-            
-            $query->execute([
-                $_POST['nouvel_etat'],
-                $_POST['commande_id'],
-                $boutique_id
-            ]);
-            
-            $etat_text = $_POST['nouvel_etat'] == 'payee' ? 'payée' : 'brouillon';
-            $_SESSION['flash_message'] = [
-                'text' => "Commande marquée comme $etat_text !",
-                'type' => "success"
-            ];
-            
+            $query = $pdo->prepare("UPDATE commandes SET statut = 1 WHERE id = ? AND boutique_id = ? AND statut = 0");
+            $query->execute([$_POST['commande_id'], $boutique_id]);
+            $_SESSION['flash_message'] = ['text' => "Commande archivée !", 'type' => "success"];
         } catch (PDOException $e) {
-            $_SESSION['flash_message'] = [
-                'text' => "Erreur lors du changement d'état: " . $e->getMessage(),
-                'type' => "error"
-            ];
-        }
-    }
-    
-    elseif (isset($_POST['archiver_commande'])) {
-        // Archiver une commande (soft delete)
-        try {
-            $query = $pdo->prepare("
-                UPDATE commandes 
-                SET statut = 1
-                WHERE id = ? AND boutique_id = ? AND statut = 0
-            ");
-            
-            $query->execute([
-                $_POST['commande_id'],
-                $boutique_id
-            ]);
-            
-            $_SESSION['flash_message'] = [
-                'text' => "Commande archivée avec succès !",
-                'type' => "success"
-            ];
-            
-        } catch (PDOException $e) {
-            $_SESSION['flash_message'] = [
-                'text' => "Erreur lors de l'archivage: " . $e->getMessage(),
-                'type' => "error"
-            ];
+            $message = "Erreur : " . $e->getMessage();
+            $message_type = 'error';
         }
     }
 }
 
-// Vérifier si c'est une requête AJAX pour récupérer les données d'une commande
+// AJAX : récupérer une commande
 if (isset($_GET['action']) && $_GET['action'] == 'get_commande' && isset($_GET['id'])) {
-    $commandeId = (int)$_GET['id'];
-    try {
-        $query = $pdo->prepare("
-            SELECT c.*, 
-                   b.nom as boutique_nom
-            FROM commandes c
-            JOIN boutiques b ON c.boutique_id = b.id
-            WHERE c.id = ? AND c.boutique_id = ? AND c.statut = 0
-        ");
-        $query->execute([$commandeId, $boutique_id]);
-        $commande = $query->fetch(PDO::FETCH_ASSOC);
-
-        if ($commande) {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => true, 'commande' => $commande]);
-        } else {
-            header('Content-Type: application/json');
-            echo json_encode(['success' => false, 'message' => 'Commande non trouvée']);
-        }
-    } catch (PDOException $e) {
-        header('Content-Type: application/json');
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Erreur de base de données.']);
-    }
+    $query = $pdo->prepare("SELECT c.* FROM commandes c WHERE c.id = ? AND c.boutique_id = ? AND c.statut = 0");
+    $query->execute([(int)$_GET['id'], $boutique_id]);
+    $commande = $query->fetch(PDO::FETCH_ASSOC);
+    header('Content-Type: application/json');
+    echo json_encode($commande ? ['success' => true, 'commande' => $commande] : ['success' => false, 'message' => 'Non trouvée']);
     exit;
 }
 
@@ -243,133 +103,61 @@ $filter_date_debut = $_GET['date_debut'] ?? '';
 $filter_date_fin = $_GET['date_fin'] ?? '';
 $search_term = $_GET['search'] ?? '';
 
-// Construire la requête avec filtres
 $whereConditions = ["c.boutique_id = ?", "c.statut = 0"];
 $params = [$boutique_id];
-
 if ($filter_etat) {
     $whereConditions[] = "c.etat = ?";
     $params[] = $filter_etat;
 }
-
 if ($filter_date_debut) {
     $whereConditions[] = "DATE(c.date_commande) >= ?";
     $params[] = $filter_date_debut;
 }
-
 if ($filter_date_fin) {
     $whereConditions[] = "DATE(c.date_commande) <= ?";
     $params[] = $filter_date_fin;
 }
-
 if ($search_term) {
     $whereConditions[] = "(c.numero_facture LIKE ? OR c.client_nom LIKE ?)";
-    $searchPattern = "%$search_term%";
-    $params[] = $searchPattern;
-    $params[] = $searchPattern;
+    $params[] = "%$search_term%";
+    $params[] = "%$search_term%";
 }
-
 $whereClause = implode(' AND ', $whereConditions);
 
-// Pagination
 $limit = 10;
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $offset = ($page - 1) * $limit;
 
-// Compter le nombre total de commandes
 try {
-    // Compter le total
     $countQuery = $pdo->prepare("SELECT COUNT(*) FROM commandes c WHERE $whereClause");
     $countQuery->execute($params);
     $total_commandes = $countQuery->fetchColumn();
     $totalPages = ceil($total_commandes / $limit);
+    if ($totalPages < 1) $totalPages = 1;
 
-    // --- CORRECTION COMPLÈTE : Utilisation uniquement de paramètres positionnels ---
-    
-    // Construire la requête SQL complète
-    $sql = "
-        SELECT c.*, 
-               b.nom as boutique_nom,
-               (SELECT COUNT(*) FROM commande_produits cp WHERE cp.commande_id = c.id AND cp.statut = 0) as nb_produits,
-               (SELECT COALESCE(SUM(cp.quantite * cp.prix_unitaire), 0) FROM commande_produits cp WHERE cp.commande_id = c.id AND cp.statut = 0) as montant_total
-        FROM commandes c
-        JOIN boutiques b ON c.boutique_id = b.id
-        WHERE $whereClause
-        ORDER BY c.date_commande DESC 
-        LIMIT ? OFFSET ?
-    ";
-    
-    // Ajouter les paramètres de pagination à la fin du tableau de paramètres
-    $allParams = array_merge($params, [$limit, $offset]);
-    
-    // Préparer et exécuter la requête
+    $sql = "SELECT c.*, (SELECT COUNT(*) FROM commande_produits cp WHERE cp.commande_id = c.id AND cp.statut = 0) as nb_produits, (SELECT COALESCE(SUM(cp.quantite * cp.prix_unitaire), 0) FROM commande_produits cp WHERE cp.commande_id = c.id AND cp.statut = 0) as montant_total FROM commandes c WHERE $whereClause ORDER BY c.date_commande DESC LIMIT ? OFFSET ?";
+
     $query = $pdo->prepare($sql);
-    
-    // Solution pour éviter l'erreur avec LIMIT/OFFSET :
-    // 1. Préparer la requête avec des marqueurs ?
-    // 2. Exécuter avec tous les paramètres
-    // 3. Utiliser bindValue avec types explicits
-    $query = $pdo->prepare($sql);
-    
-    // Lier tous les paramètres avec bindValue pour spécifier les types
     $paramIndex = 1;
-    foreach ($params as $param) {
-        // Déterminer le type en fonction de la valeur
-        if (is_int($param)) {
-            $query->bindValue($paramIndex, $param, PDO::PARAM_INT);
-        } elseif (is_bool($param)) {
-            $query->bindValue($paramIndex, $param, PDO::PARAM_BOOL);
-        } elseif (is_null($param)) {
-            $query->bindValue($paramIndex, $param, PDO::PARAM_NULL);
-        } else {
-            $query->bindValue($paramIndex, $param, PDO::PARAM_STR);
-        }
+    foreach ($params as $p) {
+        $query->bindValue($paramIndex, $p, is_int($p) ? PDO::PARAM_INT : PDO::PARAM_STR);
         $paramIndex++;
     }
-    
-    // Pour les paramètres de pagination, utiliser PDO::PARAM_INT
     $query->bindValue($paramIndex, $limit, PDO::PARAM_INT);
     $query->bindValue($paramIndex + 1, $offset, PDO::PARAM_INT);
-    
-    // Exécuter la requête
     $query->execute();
-    
     $commandes = $query->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Calculer les statistiques
-    $statsQuery = $pdo->prepare("
-        SELECT 
-            COUNT(*) as total_commandes,
-            SUM(CASE WHEN etat = 'payee' THEN 1 ELSE 0 END) as commandes_payees,
-            SUM(CASE WHEN etat = 'brouillon' THEN 1 ELSE 0 END) as commandes_brouillon,
-            COALESCE(
-                (SELECT SUM(cp.quantite * cp.prix_unitaire) 
-                 FROM commande_produits cp 
-                 JOIN commandes c2 ON cp.commande_id = c2.id 
-                 WHERE c2.boutique_id = ? AND c2.statut = 0 AND c2.etat = 'payee' AND cp.statut = 0),
-                0
-            ) as chiffre_affaires
-        FROM commandes 
-        WHERE boutique_id = ? AND statut = 0
-    ");
-    
+
+    $statsQuery = $pdo->prepare("SELECT COUNT(*) as total, SUM(CASE WHEN etat='payee' THEN 1 ELSE 0 END) as payees, SUM(CASE WHEN etat='brouillon' THEN 1 ELSE 0 END) as brouillons, COALESCE((SELECT SUM(cp.quantite * cp.prix_unitaire) FROM commande_produits cp JOIN commandes c2 ON cp.commande_id=c2.id WHERE c2.boutique_id=? AND c2.statut=0 AND c2.etat='payee' AND cp.statut=0),0) as ca FROM commandes WHERE boutique_id=? AND statut=0");
     $statsQuery->execute([$boutique_id, $boutique_id]);
     $stats = $statsQuery->fetch(PDO::FETCH_ASSOC);
-    
-    $chiffre_affaires = $stats['chiffre_affaires'] ?? 0;
-    $commandes_payees = $stats['commandes_payees'] ?? 0;
-    $commandes_brouillon = $stats['commandes_brouillon'] ?? 0;
-
+    $chiffre_affaires = $stats['ca'] ?? 0;
+    $commandes_payees = $stats['payees'] ?? 0;
+    $commandes_brouillon = $stats['brouillons'] ?? 0;
 } catch (PDOException $e) {
-    $_SESSION['flash_message'] = [
-        'text' => "Erreur lors du chargement des commandes: " . $e->getMessage(),
-        'type' => "error"
-    ];
-    // Pour déboguer
-    error_log("SQL Error in ventes_boutique.php: " . $e->getMessage());
-    error_log("SQL Query: " . $sql ?? '');
-    error_log("Params: " . print_r($allParams ?? $params, true));
-    
+    $message = "Erreur : " . $e->getMessage();
+    $message_type = 'error';
     $chiffre_affaires = 0;
     $commandes_payees = 0;
     $commandes_brouillon = 0;
@@ -380,748 +168,573 @@ try {
 ?>
 
 <!DOCTYPE html>
-<html lang="fr" class="h-full">
+<html lang="fr" class="scroll-smooth">
+
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-    <title>Gestion des Ventes - Boutique NGS</title>
-    
+    <title>Ventes - Boutique NGS</title>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
 
     <style>
         :root {
-            --primary: #0A2540;
-            --secondary: #7B61FF;
-            --accent: #00D4AA;
-            --light: #F8FAFC;
-            --dark: #1E293B;
+            --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
+            --glass-bg: rgba(255, 255, 255, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.3);
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --text-primary: #1a1a2e;
+            --text-secondary: #4a4a6a;
+            --text-muted: #6b7280;
+            --accent-gradient: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            --input-bg: rgba(255, 255, 255, 0.9);
+            --input-border: rgba(0, 0, 0, 0.1);
+            --divider: rgba(0, 0, 0, 0.06);
+        }
+
+        .dark {
+            --sidebar-bg: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+            --glass-bg: rgba(15, 23, 42, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+            --input-bg: rgba(30, 41, 59, 0.8);
+            --input-border: rgba(255, 255, 255, 0.1);
+            --divider: rgba(255, 255, 255, 0.06);
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #F8FAFC;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 50%, #f5f3ff 100%);
+            color: var(--text-primary);
+            transition: background 0.4s ease, color 0.4s ease;
         }
 
-        .font-display {
-            font-family: 'Outfit', sans-serif;
+        .dark body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
         }
 
-        .gradient-bg {
-            background: linear-gradient(135deg, #0A2540 0%, #1E3A5F 100%);
+        .sidebar {
+            background: var(--sidebar-bg);
         }
 
-        .gradient-accent {
-            background: linear-gradient(90deg, #7B61FF 0%, #00D4AA 100%);
-        }
-
-        .gradient-green-btn {
-            background: linear-gradient(90deg, #10B981 0%, #059669 100%); 
-            color: white; 
-            transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
-        }
-
-        .gradient-green-btn:hover {
-            opacity: 0.9;
-            transform: translateY(-2px);
-        }
-
-        .shadow-soft {
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05);
-        }
-
-        .hover-lift {
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .hover-lift:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
-        }
-
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.show {
-            display: flex;
-        }
-
-        .modal-content {
-            background-color: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .slide-down {
-            animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .status-payee {
-            background-color: #D1FAE5;
-            color: #065F46;
-        }
-
-        .status-brouillon {
-            background-color: #FEF3C7;
-            color: #92400E;
-        }
-
-        .stats-card {
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
             transition: all 0.3s ease;
         }
 
-        .stats-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        .premium-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.25rem;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+            transition: all 0.3s ease;
         }
 
-        .table-container {
-            overflow-x: auto;
+        .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
         }
 
-        .commande-row:hover {
-            background-color: #f9fafb;
+        .dark .premium-card:hover {
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
 
-        .etat-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
+        .input-glass {
+            background: var(--input-bg);
+            border: 2px solid var(--input-border);
+            color: var(--text-primary);
+            border-radius: 0.75rem;
+            transition: all 0.3s ease;
         }
 
-        .montant-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 14px;
+        .input-glass:focus {
+            border-color: #10b981;
+            box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+            outline: none;
+        }
+
+        .btn-glass {
+            background: var(--accent-gradient);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
             font-weight: 600;
-            background-color: #DBEAFE;
-            color: #1E40AF;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(30, 58, 138, 0.2);
+        }
+
+        .btn-glass:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(30, 58, 138, 0.35);
+        }
+
+        .btn-green {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25);
+        }
+
+        .btn-green:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
+        }
+
+        .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            transition: all 0.3s ease;
+            border-radius: 0.75rem;
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            padding-left: 1.25rem;
+        }
+
+        .nav-link.active {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border-left: 3px solid #34d399;
+        }
+
+        .stat-card {
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+        }
+
+        .theme-toggle {
+            width: 44px;
+            height: 24px;
+            background: #cbd5e1;
+            border-radius: 12px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .dark .theme-toggle {
+            background: #334155;
+        }
+
+        .theme-toggle::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s ease;
+        }
+
+        .dark .theme-toggle::after {
+            transform: translateX(20px);
+            background: #fbbf24;
+        }
+
+        .modal-overlay {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        .modal-container {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 1.5rem;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .dark .badge-success {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+        }
+
+        .dark .badge-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+        }
+
+        *:focus-visible {
+            outline: 2px solid #10b981;
+            outline-offset: 2px;
+            border-radius: 6px;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-fade-in-up {
+            animation: fadeInUp 0.4s ease-out forwards;
         }
 
         @media (max-width: 768px) {
-            .modal-content {
-                width: 95%;
-                margin: 10px;
+            .sidebar {
+                transform: translateX(-100%);
             }
-            
-            .action-buttons {
-                flex-direction: column;
-                gap: 0.5rem;
-            }
-            
-            .action-btn {
-                width: 100%;
-                justify-content: center;
+
+            .sidebar.open {
+                transform: translateX(0);
             }
         }
     </style>
 </head>
-<body class="font-inter min-h-screen bg-gray-50">
-    <div class="flex h-screen">
-        <!-- Sidebar pour boutique (similaire à celle du PDG mais adaptée) -->
-        <aside class="sidebar w-64 gradient-bg text-white flex flex-col sticky top-0 h-full">
-            <div class="sidebar-header p-6 border-b border-white/10">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-full gradient-accent flex items-center justify-center shadow-lg">
-                        <span class="font-bold text-white text-lg font-display">NGS</span>
-                    </div>
+
+<body class="h-screen flex overflow-hidden">
+
+    <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="sidebar w-64 flex flex-col fixed md:sticky top-0 h-full z-50 transition-transform duration-300 text-white">
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
+                    <span class="font-bold text-white">NGS</span>
+                </div>
+                <div>
+                    <h2 class="font-bold text-sm">NGS Pro</h2>
+                    <p class="text-[10px] text-gray-400">Dashboard Boutique</p>
+                </div>
+            </div>
+        </div>
+        <div class="p-5 border-b border-white/10 flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center"><i class="fas fa-store text-emerald-400"></i></div>
+                <div class="min-w-0">
+                    <p class="font-semibold text-sm truncate"><?= htmlspecialchars($_SESSION['boutique_nom'] ?? 'Boutique') ?></p>
+                </div>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-3 space-y-1">
+            <a href="dashboard_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-line w-4 text-center"></i>Tableau de bord</a>
+            <a href="stock_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-warehouse w-4 text-center"></i>Mes stocks</a>
+            <a href="ventes_boutique.php" class="nav-link active flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-shopping-cart w-4 text-center"></i>Ventes<?php if ($total_commandes > 0): ?><span class="ml-auto bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full"><?= $total_commandes ?></span><?php endif; ?></a>
+            <a href="paiements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-money-bill-wave w-4 text-center"></i>Paiements</a>
+            <a href="mouvements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-exchange-alt w-4 text-center"></i>Mouvements Caisse</a>
+            <a href="transferts-boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-truck-loading w-4 text-center"></i>Transferts</a>
+            <a href="rapports_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-bar w-4 text-center"></i>Rapports</a>
+            <a href="realisations.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-images w-4 text-center"></i>Réalisations</a>
+        </nav>
+        <div class="p-3 border-t border-white/10 flex-shrink-0">
+            <div class="flex items-center justify-between px-3 py-2 mb-2">
+                <span class="text-xs text-gray-400"><i class="fas fa-moon mr-1"></i>Thème</span>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Changer le thème"></button>
+            </div>
+            <a href="../models/logout.php" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors text-sm"><i class="fas fa-sign-out-alt w-4 text-center"></i>Déconnexion</a>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 overflow-y-auto">
+        <header class="sticky top-0 z-30 glass border-b border-white/10">
+            <div class="flex items-center justify-between px-4 md:px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <button id="mobileMenuBtn" class="md:hidden p-2 rounded-lg hover:bg-white/10 transition-colors text-[var(--text-primary)]"><i class="fas fa-bars text-lg"></i></button>
                     <div>
-                        <h1 class="font-display text-xl font-bold">Boutique</h1>
-                        <p class="text-xs text-gray-300">Interface de vente</p>
+                        <h1 class="text-lg md:text-xl font-bold text-[var(--text-primary)]">Gestion des Ventes</h1>
+                        <p class="text-xs text-[var(--text-muted)]">Nouvelle commande • Suivi</p>
                     </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openCommandeModal()" class="btn-green px-4 py-2 rounded-xl text-sm flex items-center gap-2">
+                        <i class="fas fa-plus-circle"></i><span class="hidden sm:inline">Nouvelle vente</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="p-4 md:p-6 space-y-6">
+
+            <?php if ($message): ?>
+                <div class="animate-fade-in-up">
+                    <div class="glass rounded-2xl p-4 border-l-4 <?= $message_type === 'success' ? 'border-emerald-500' : 'border-red-500' ?>">
+                        <div class="flex items-center gap-3">
+                            <i class="fas fa-<?= $message_type === 'success' ? 'check-circle text-emerald-500' : 'exclamation-circle text-red-500' ?> text-xl"></i>
+                            <span class="text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($message) ?></span>
+                            <button onclick="this.closest('.animate-fade-in-up').remove()" class="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-emerald-500" style="animation-delay:0s">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Total</span>
+                        <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><i class="fas fa-shopping-cart text-emerald-600 dark:text-emerald-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $total_commandes ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Commandes</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-blue-500" style="animation-delay:0.1s">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-medium text-blue-600 dark:text-blue-400">Payées</span>
+                        <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"><i class="fas fa-check-circle text-blue-600 dark:text-blue-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $commandes_payees ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Réglées</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-amber-500" style="animation-delay:0.2s">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-medium text-amber-600 dark:text-amber-400">Brouillons</span>
+                        <div class="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center"><i class="fas fa-edit text-amber-600 dark:text-amber-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $commandes_brouillon ?></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">En attente</p>
+                </div>
+                <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-purple-500" style="animation-delay:0.3s">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-xs font-medium text-purple-600 dark:text-purple-400">CA</span>
+                        <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center"><i class="fas fa-money-bill-wave text-purple-600 dark:text-purple-400 text-sm"></i></div>
+                    </div>
+                    <p class="text-2xl font-bold text-[var(--text-primary)]"><?= number_format($chiffre_affaires, 2) ?> $</p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Ventes</p>
                 </div>
             </div>
 
-            <nav class="sidebar-nav p-4 space-y-1">
-                <a href="dashboard_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-line w-5 text-gray-300"></i>
-                    <span>Tableau de bord</span>
-                </a>
-                <a href="ventes_boutique.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg bg-white/10">
-                    <i class="fas fa-shopping-cart w-5 text-white"></i>
-                    <span>Ventes</span>
-                    <span class="notification-badge"><?= $total_commandes ?></span>
-                </a>
-                <a href="paiements.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-users w-5 text-gray-300"></i>
-                    <span>paiements</span>
-                </a>
-                <a href="stock_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-box w-5 text-gray-300"></i>
-                    <span>Mes Stocks</span>
-                </a>
-                <a href="transferts-boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-truck-loading w-5 text-gray-300"></i>
-                    <span>Transferts</span>
-                </a>
-                <a href="rapports_boutique.php" class="nav-link flex items-center space-x-3 p-3 rounded-lg hover:bg-white/5 transition-colors">
-                    <i class="fas fa-chart-bar w-5 text-gray-300"></i>
-                    <span>Rapports</span>
-                </a>
-                <a href="mouvements.php" class="nav-link active flex items-center space-x-3 p-3 rounded-lg">
-                    <i class="fas fa-exchange-alt w-5 text-white"></i>
-                    <span>Mouvements Caisse</span>
-                </a>
-                
-            </nav>
-
-            <div class="sidebar-footer p-4 border-t border-white/10">
-                <a href="../models/logout.php" class="flex items-center space-x-3 p-3 rounded-lg hover:bg-red-500/10 text-red-300 hover:text-red-200 transition-colors">
-                    <i class="fas fa-sign-out-alt w-5"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </div>
-        </aside>
-
-        <div class="main-content flex-1 overflow-y-auto">
-            <header class="bg-white border-b border-gray-200 p-6 sticky top-0 z-30 shadow-sm">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <h1 class="text-2xl font-bold text-gray-900">Gestion des Ventes - Boutique</h1>
-                        <p class="text-gray-600">Nouvelle Grace Service - Interface de vente</p>
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <button onclick="openCommandeModal()"
-                            class="px-4 py-3 gradient-green-btn text-white rounded-lg hover:opacity-90 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
-                            <i class="fas fa-plus"></i>
-                            <span>Nouvelle vente</span>
-                        </button>
-                        <a href="rapports_boutique.php"
-                            class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2 shadow-md hover-lift transition-all duration-300">
-                            <i class="fas fa-chart-line"></i>
-                            <span>Statistiques</span>
-                        </a>
-                    </div>
-                </div>
-            </header>
-
-            <main class="p-6">
-                <?php if ($message): ?>
-                    <div class="mb-6 fade-in relative z-10 animate-fade-in">
-                        <div class="
-                            <?php if ($message_type === 'success'): ?>bg-green-50 text-green-700 border border-green-200
-                            <?php elseif ($message_type === 'error'): ?>bg-red-50 text-red-700 border border-red-200
-                            <?php elseif ($message_type === 'warning'): ?>bg-yellow-50 text-yellow-700 border border-yellow-200
-                            <?php else: ?>bg-blue-50 text-blue-700 border border-blue-200<?php endif; ?>
-                            rounded-xl p-4 flex items-center justify-between shadow-soft">
-                            <div class="flex items-center space-x-3">
-                                <?php if ($message_type === 'success'): ?>
-                                    <i class="fas fa-check-circle text-green-600 text-lg"></i>
-                                <?php elseif ($message_type === 'error'): ?>
-                                    <i class="fas fa-exclamation-circle text-red-600 text-lg"></i>
-                                <?php elseif ($message_type === 'warning'): ?>
-                                    <i class="fas fa-exclamation-triangle text-yellow-600 text-lg"></i>
-                                <?php else: ?>
-                                    <i class="fas fa-info-circle text-blue-600 text-lg"></i>
-                                <?php endif; ?>
-                                <span><?= htmlspecialchars($message) ?></span>
-                            </div>
-                            <button onclick="this.parentElement.parentElement.style.display='none'" class="text-gray-400 hover:text-gray-600 transition-colors">
-                                <i class="fas fa-times text-lg"></i>
-                            </button>
-                        </div>
-                    </div>
-                <?php endif; ?>
-
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-green-500 animate-fade-in">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center">
-                                <i class="fas fa-shopping-cart text-green-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-green-600">Total</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $total_commandes ?></h3>
-                        <p class="text-gray-600">Commandes</p>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-blue-500 animate-fade-in" style="animation-delay: 0.1s">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                                <i class="fas fa-check-circle text-blue-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-blue-600">Payées</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $commandes_payees ?></h3>
-                        <p class="text-gray-600">Commandes réglées</p>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-yellow-500 animate-fade-in" style="animation-delay: 0.2s">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-yellow-100 flex items-center justify-center">
-                                <i class="fas fa-edit text-yellow-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-yellow-600">Brouillons</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= $commandes_brouillon ?></h3>
-                        <p class="text-gray-600">Commandes en attente</p>
-                    </div>
-
-                    <div class="bg-white rounded-2xl shadow-soft p-6 stats-card border-l-4 border-purple-500 animate-fade-in" style="animation-delay: 0.3s">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                                <i class="fas fa-money-bill-wave text-purple-600 text-xl"></i>
-                            </div>
-                            <span class="text-sm font-medium text-purple-600">Chiffre d'affaires</span>
-                        </div>
-                        <h3 class="text-3xl font-bold text-gray-900 mb-2"><?= number_format($chiffre_affaires, 2) ?> $</h3>
-                        <p class="text-gray-600">Total des ventes</p>
-                    </div>
-                </div>
-
-                <!-- Filtres -->
-                <div class="bg-white rounded-2xl shadow-soft p-6 mb-6 animate-fade-in">
-                    <form method="GET" action="" class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">État</label>
-                            <select name="etat" class="w-full border-gray-300 rounded-lg p-3">
-                                <option value="">Tous les états</option>
+            <!-- Filtres -->
+            <div class="premium-card p-5 animate-fade-in-up" style="animation-delay:0.15s">
+                <form method="GET" action="" class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">État</label><select name="etat" class="w-full input-glass px-3 py-2.5 text-sm">
+                                <option value="">Tous</option>
                                 <option value="brouillon" <?= $filter_etat == 'brouillon' ? 'selected' : '' ?>>Brouillon</option>
                                 <option value="payee" <?= $filter_etat == 'payee' ? 'selected' : '' ?>>Payée</option>
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Date début</label>
-                            <input type="date" name="date_debut" value="<?= $filter_date_debut ?>"
-                                   class="w-full border-gray-300 rounded-lg p-3">
-                        </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Date fin</label>
-                            <input type="date" name="date_fin" value="<?= $filter_date_fin ?>"
-                                   class="w-full border-gray-300 rounded-lg p-3">
-                        </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Recherche</label>
-                            <input type="text" name="search" value="<?= htmlspecialchars($search_term) ?>"
-                                   placeholder="Numéro facture ou client..."
-                                   class="w-full border-gray-300 rounded-lg p-3">
-                        </div>
-                        
-                        <div class="md:col-span-4 flex justify-end space-x-3 mt-2">
-                            <a href="ventes_boutique.php" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100">
-                                Réinitialiser
-                            </a>
-                            <button type="submit" class="px-4 py-2 gradient-green-btn text-white rounded-lg">
-                                <i class="fas fa-filter mr-2"></i>Filtrer
-                            </button>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- Tableau des commandes -->
-                <div class="bg-white rounded-2xl shadow-soft overflow-hidden animate-fade-in">
-                    <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                        <h2 class="text-lg font-semibold text-gray-900">Liste des commandes</h2>
+                            </select></div>
+                        <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Date début</label><input type="date" name="date_debut" value="<?= $filter_date_debut ?>" class="w-full input-glass px-3 py-2.5 text-sm"></div>
+                        <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Date fin</label><input type="date" name="date_fin" value="<?= $filter_date_fin ?>" class="w-full input-glass px-3 py-2.5 text-sm"></div>
+                        <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Recherche</label><input type="text" name="search" value="<?= htmlspecialchars($search_term) ?>" placeholder="Facture ou client..." class="w-full input-glass px-3 py-2.5 text-sm"></div>
                     </div>
+                    <div class="flex justify-end gap-2 pt-2">
+                        <a href="ventes_boutique.php" class="px-4 py-2 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Réinitialiser</a>
+                        <button type="submit" class="btn-green px-4 py-2 rounded-xl text-sm">Filtrer</button>
+                    </div>
+                </form>
+            </div>
 
-                    <div class="table-container">
-                        <table class="w-full min-w-[800px]">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Facture</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">État</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produits</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Montant</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                <?php if (!empty($commandes)): ?>
-                                    <?php foreach ($commandes as $index => $commande): ?>
-                                        <tr class="commande-row hover:bg-gray-50 transition-colors fade-in-row"
-                                            style="animation-delay: <?= $index * 0.05 ?>s">
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <div class="text-sm font-bold text-gray-900">
-                                                    <?= htmlspecialchars($commande['numero_facture']) ?>
-                                                </div>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                <?= $commande['client_nom'] ? htmlspecialchars($commande['client_nom']) : '<span class="text-gray-400">Non renseigné</span>' ?>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                <?= date('d/m/Y H:i', strtotime($commande['date_commande'])) ?>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <span class="etat-badge <?= $commande['etat'] == 'payee' ? 'status-payee' : 'status-brouillon' ?>">
-                                                    <i class="fas fa-<?= $commande['etat'] == 'payee' ? 'check-circle' : 'edit' ?> mr-1"></i>
-                                                    <?= $commande['etat'] == 'payee' ? 'Payée' : 'Brouillon' ?>
-                                                </span>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                                <span class="font-medium"><?= $commande['nb_produits'] ?? 0 ?></span> produit(s)
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap">
-                                                <span class="montant-badge">
-                                                    <?= number_format($commande['montant_total'] ?? 0, 2) ?> $
-                                                </span>
-                                            </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                                <div class="flex space-x-2 action-buttons">
-                                                    <a href="commande_details.php?id=<?= $commande['id'] ?>"
-                                                       class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                                                        <i class="fas fa-eye mr-1"></i>
-                                                        Voir
-                                                    </a>
-                                                    
-                                                    <!-- <?php if ($commande['etat'] == 'brouillon'): ?>
-                                                        <button onclick="changerEtat(<?= $commande['id'] ?>, 'payee')"
-                                                                class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700">
-                                                            <i class="fas fa-check mr-1"></i>
-                                                            Payer
-                                                        </button>
-                                                    <?php else: ?>
-                                                        <button onclick="changerEtat(<?= $commande['id'] ?>, 'brouillon')"
-                                                                class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-yellow-600 hover:bg-yellow-700">
-                                                            <i class="fas fa-undo mr-1"></i>
-                                                            Brouillon
-                                                        </button>
-                                                    <?php endif; ?> -->
-                                                    
-                                                    <button onclick="openDeleteModal(<?= $commande['id'] ?>, '<?= htmlspecialchars(addslashes($commande['numero_facture'])) ?>')"
-                                                            class="action-btn inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700">
-                                                        <i class="fas fa-archive mr-1"></i>
-                                                        Archiver
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr>
-                                        <td colspan="7" class="px-6 py-8 text-center">
-                                            <div class="text-gray-500">
-                                                <i class="fas fa-shopping-cart text-4xl mb-4"></i>
-                                                <p class="text-lg">Aucune commande enregistrée</p>
-                                                <p class="text-sm mt-2">Créez votre première vente en utilisant le bouton "Nouvelle vente"</p>
+            <!-- Tableau -->
+            <div class="premium-card overflow-hidden animate-fade-in-up" style="animation-delay:0.2s">
+                <div class="px-5 py-4 border-b border-[var(--divider)] flex items-center justify-between">
+                    <h3 class="text-base font-bold text-[var(--text-primary)]">Liste des commandes</h3>
+                    <span class="text-xs text-[var(--text-muted)]"><?= $total_commandes ?> commande(s)</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[800px]">
+                        <thead>
+                            <tr class="border-b border-[var(--divider)] text-left">
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Facture</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Client</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Date</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">État</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Produits</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Montant</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[var(--divider)]">
+                            <?php if (!empty($commandes)): ?>
+                                <?php foreach ($commandes as $c): ?>
+                                    <tr class="hover:bg-white/5 transition-colors">
+                                        <td class="px-5 py-3.5 text-sm font-mono font-bold text-[var(--text-primary)]"><?= htmlspecialchars($c['numero_facture']) ?></td>
+                                        <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= $c['client_nom'] ? htmlspecialchars($c['client_nom']) : '<span class="text-[var(--text-muted)] italic">Non renseigné</span>' ?></td>
+                                        <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= date('d/m/Y H:i', strtotime($c['date_commande'])) ?></td>
+                                        <td class="px-5 py-3.5">
+                                            <span class="px-2.5 py-1 rounded-full text-xs font-medium <?= $c['etat'] == 'payee' ? 'badge-success' : 'badge-warning' ?>">
+                                                <i class="fas fa-<?= $c['etat'] == 'payee' ? 'check-circle' : 'edit' ?> mr-1"></i><?= $c['etat'] == 'payee' ? 'Payée' : 'Brouillon' ?>
+                                            </span>
+                                        </td>
+                                        <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= $c['nb_produits'] ?? 0 ?> produit(s)</td>
+                                        <td class="px-5 py-3.5 text-sm font-bold text-emerald-600 dark:text-emerald-400"><?= number_format($c['montant_total'] ?? 0, 2) ?> $</td>
+                                        <td class="px-5 py-3.5">
+                                            <div class="flex items-center justify-center gap-1.5">
+                                                <a href="commande_details.php?id=<?= $c['id'] ?>" class="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors" title="Voir"><i class="fas fa-eye text-xs"></i></a>
+                                                <button onclick="openDeleteModal(<?= $c['id'] ?>, '<?= htmlspecialchars(addslashes($c['numero_facture'])) ?>')" class="p-2 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors" title="Archiver"><i class="fas fa-archive text-xs"></i></button>
                                             </div>
                                         </td>
                                     </tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <?php if ($totalPages > 1): ?>
-                        <div class="px-6 py-4 border-t border-gray-200 bg-gray-50">
-                            <div class="flex items-center justify-between">
-                                <div class="text-sm text-gray-700">
-                                    Affichage de <span class="font-medium"><?= ($page - 1) * $limit + 1 ?></span> à
-                                    <span class="font-medium"><?= min($page * $limit, $total_commandes) ?></span> sur
-                                    <span class="font-medium"><?= $total_commandes ?></span> commandes
-                                </div>
-
-                                <div class="flex items-center space-x-2">
-                                    <a href="?<?= http_build_query(array_merge($_GET, ['page' => max(1, $page - 1)])) ?>"
-                                        class="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors <?= $page <= 1 ? 'opacity-50 pointer-events-none' : '' ?>">
-                                        <i class="fas fa-chevron-left"></i>
-                                    </a>
-
-                                    <?php for ($i = max(1, $page - 1); $i <= min($totalPages, $page + 1); $i++): ?>
-                                        <a href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>"
-                                            class="px-3 py-2 rounded-lg text-sm font-medium transition-colors <?= $i == $page ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-md' : 'text-gray-700 hover:bg-gray-100 border border-gray-300' ?>">
-                                            <?= $i ?>
-                                        </a>
-                                    <?php endfor; ?>
-
-                                    <a href="?<?= http_build_query(array_merge($_GET, ['page' => min($totalPages, $page + 1)])) ?>"
-                                        class="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors <?= $page >= $totalPages ? 'opacity-50 pointer-events-none' : '' ?>">
-                                        <i class="fas fa-chevron-right"></i>
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="7" class="px-5 py-12 text-center"><i class="fas fa-shopping-cart text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                                        <p class="text-[var(--text-secondary)] font-medium">Aucune commande</p>
+                                        <p class="text-xs text-[var(--text-muted)] mt-1">Créez votre première vente</p>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
-            </main>
-        </div>
-    </div>
 
-    <!-- Modal pour créer/modifier une commande -->
-    <div id="commandeModal" class="modal transition-all duration-300 ease-in-out">
-        <div class="modal-content slide-down p-6">
-            <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <h3 class="text-xl font-bold text-gray-900" id="modalTitle">Nouvelle vente - Boutique NGS</h3>
-                <button onclick="closeCommandeModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-2xl"></i>
-                </button>
-            </div>
-            
-            <form id="commandeForm" method="POST" action="">
-                <input type="hidden" name="commande_id" id="commandeId">
-                
-                <div class="space-y-4">
-                    <div>
-                        <label for="client_nom" class="block text-sm font-medium text-gray-700 mb-1">Nom du client (optionnel)</label>
-                        <input type="text" name="client_nom" id="client_nom"
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 p-3"
-                               placeholder="Ex: Jean Dupont">
-                    </div>
-                    
-                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <div class="flex items-start space-x-3">
-                            <i class="fas fa-info-circle text-green-500 mt-0.5"></i>
-                            <div>
-                                <p class="text-sm text-green-700 font-medium">Note sur les ventes</p>
-                                <p class="text-xs text-green-600 mt-1">
-                                    Le numéro de facture sera généré automatiquement au format <strong>FACT-B<?= $boutique_id ?>-XXX</strong>.
-                                    Exemple: FACT-B<?= $boutique_id ?>-001, FACT-B<?= $boutique_id ?>-002, etc.
-                                </p>
-                            </div>
+                <?php if ($totalPages > 1): ?>
+                    <div class="px-5 py-4 border-t border-[var(--divider)] flex items-center justify-between">
+                        <span class="text-xs text-[var(--text-muted)] hidden sm:block"><?= ($page - 1) * $limit + 1 ?>-<?= min($page * $limit, $total_commandes) ?> sur <?= $total_commandes ?></span>
+                        <div class="flex items-center gap-1.5 mx-auto sm:mx-0">
+                            <a href="?<?= http_build_query(array_merge($_GET, ['page' => max(1, $page - 1)])) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page <= 1 ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-left text-xs"></i></a>
+                            <?php for ($i = max(1, $page - 1); $i <= min($totalPages, $page + 1); $i++): ?>
+                                <a href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>" class="w-8 h-8 rounded-lg text-sm font-medium flex items-center justify-center transition-all <?= $i == $page ? 'btn-green shadow-md' : 'glass hover:bg-white/20 text-[var(--text-secondary)]' ?>"><?= $i ?></a>
+                            <?php endfor; ?>
+                            <a href="?<?= http_build_query(array_merge($_GET, ['page' => min($totalPages, $page + 1)])) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page >= $totalPages ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-right text-xs"></i></a>
                         </div>
                     </div>
-                </div>
+                <?php endif; ?>
+            </div>
 
-                <div class="mt-6 flex justify-end space-x-3">
-                    <button type="button" onclick="closeCommandeModal()"
-                            class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
-                        Annuler
-                    </button>
-                    <button type="submit" name="ajouter_commande" id="submitButton"
-                            class="px-4 py-2 gradient-green-btn text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                        Créer la vente
-                    </button>
-                </div>
-            </form>
         </div>
+    </main>
+
+    <!-- MODAL NOUVELLE COMMANDE -->
+    <div id="commandeModalOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
+    <div id="commandeModalContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-md p-6">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-lg font-bold text-[var(--text-primary)]"><i class="fas fa-plus-circle mr-2 text-emerald-500"></i>Nouvelle vente</h3>
+            <button onclick="closeCommandeModal()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><i class="fas fa-times"></i></button>
+        </div>
+        <form method="POST" action="" class="space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Nom du client</label>
+                <input type="text" name="client_nom" class="w-full input-glass px-4 py-2.5 text-sm" placeholder="Ex: Jean Dupont (optionnel)">
+            </div>
+            <div class="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/30">
+                <p class="text-xs text-emerald-700 dark:text-emerald-300"><i class="fas fa-info-circle mr-1"></i>Numéro de facture automatique : <strong>FACT-B<?= $boutique_id ?>-XXX</strong></p>
+            </div>
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="closeCommandeModal()" class="px-4 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
+                <button type="submit" name="ajouter_commande" class="btn-green px-5 py-2.5 rounded-xl text-sm">Créer la vente</button>
+            </div>
+        </form>
     </div>
 
-    <!-- Modal pour modifier une commande -->
-    <div id="editModal" class="modal transition-all duration-300 ease-in-out">
-        <div class="modal-content slide-down p-6">
-            <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <h3 class="text-xl font-bold text-gray-900">Modifier la commande</h3>
-                <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-2xl"></i>
-                </button>
-            </div>
-            
-            <form id="editForm" method="POST" action="">
-                <input type="hidden" name="commande_id" id="editCommandeId">
-                
-                <div class="space-y-4">
-                    <div>
-                        <label for="edit_client_nom" class="block text-sm font-medium text-gray-700 mb-1">Nom du client</label>
-                        <input type="text" name="client_nom" id="edit_client_nom"
-                               class="w-full border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 p-3">
-                    </div>
-                </div>
-
-                <div class="mt-6 flex justify-end space-x-3">
-                    <button type="button" onclick="closeEditModal()"
-                            class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
-                        Annuler
-                    </button>
-                    <button type="submit" name="modifier_commande"
-                            class="px-4 py-2 gradient-green-btn text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                        Modifier
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal pour archiver une commande -->
-    <div id="deleteModal" class="modal transition-all duration-300 ease-in-out">
-        <div class="modal-content slide-down p-6">
-            <div class="flex justify-between items-center border-b pb-3 mb-4">
-                <h3 class="text-xl font-bold text-gray-900">Confirmation d'archivage</h3>
-                <button onclick="closeDeleteModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
-                    <i class="fas fa-times text-2xl"></i>
-                </button>
-            </div>
-            
-            <div class="text-center py-4">
-                <i class="fas fa-archive text-5xl mb-4 text-red-500"></i>
-                <p class="text-lg font-bold text-red-700 mb-2">ARCHIVAGE DE COMMANDE</p>
-                <p class="text-gray-600 mb-4" id="deleteModalText">
-                    Vous êtes sur le point d'archiver cette commande.
-                </p>
-                <p class="text-sm text-gray-500">
-                    La commande sera marquée comme archivée et ne sera plus visible dans les listes normales.
-                </p>
-            </div>
-
-            <form id="deleteForm" method="POST" action="" class="mt-6 flex justify-center space-x-3">
-                <input type="hidden" name="commande_id" id="deleteCommandeId">
-                <button type="button" onclick="closeDeleteModal()"
-                        class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors">
-                    Annuler
-                </button>
-                <button type="submit" name="archiver_commande"
-                        class="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:opacity-90 transition-opacity shadow-md">
-                    Confirmer l'archivage
-                </button>
-            </form>
-        </div>
+    <!-- MODAL CONFIRMATION ARCHIVAGE -->
+    <div id="deleteModalOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
+    <div id="deleteModalContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-sm p-6 text-center">
+        <i class="fas fa-archive text-5xl text-red-500 mb-4"></i>
+        <h3 class="text-lg font-bold text-[var(--text-primary)] mb-2">Archiver cette commande ?</h3>
+        <p class="text-sm text-[var(--text-secondary)] mb-6" id="deleteModalText">La commande sera masquée des listes.</p>
+        <form method="POST" action="" class="flex justify-center gap-3">
+            <input type="hidden" name="commande_id" id="deleteCommandeId">
+            <button type="button" onclick="closeDeleteModal()" class="px-5 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
+            <button type="submit" name="archiver_commande" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white text-sm font-semibold hover:opacity-90 transition-all">Archiver</button>
+        </form>
     </div>
 
     <script>
-        // Modal pour nouvelle commande
-        const commandeModal = document.getElementById('commandeModal');
-        const editModal = document.getElementById('editModal');
-        const deleteModal = document.getElementById('deleteModal');
+        // Theme
+        const themeToggle = document.getElementById('theme-toggle');
+        const html = document.documentElement;
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) html.classList.add('dark');
+        themeToggle.addEventListener('click', () => {
+            html.classList.toggle('dark');
+            localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
+        });
+
+        // Sidebar
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('overlay');
+
+        function toggleSidebar() {
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('hidden');
+        }
+        document.getElementById('mobileMenuBtn').addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
+
+        // Modals
+        function openModal(o, c) {
+            document.getElementById(o).classList.remove('hidden');
+            document.getElementById(c).classList.remove('hidden')
+        }
+
+        function closeModal(o, c) {
+            document.getElementById(o).classList.add('hidden');
+            document.getElementById(c).classList.add('hidden')
+        }
 
         function openCommandeModal() {
-            commandeModal.classList.add('show');
+            openModal('commandeModalOverlay', 'commandeModalContent');
         }
 
         function closeCommandeModal() {
-            commandeModal.classList.remove('show');
+            closeModal('commandeModalOverlay', 'commandeModalContent');
         }
 
-        function openEditModal(commandeId) {
-            // Charger les données de la commande
-            fetch(`ventes_boutique.php?action=get_commande&id=${commandeId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById('editCommandeId').value = commandeId;
-                        document.getElementById('edit_client_nom').value = data.commande.client_nom || '';
-                        editModal.classList.add('show');
-                    } else {
-                        alert(data.message);
-                    }
-                })
-                .catch(error => {
-                    console.error('Erreur:', error);
-                    alert('Impossible de charger les données de la commande.');
-                });
-        }
-
-        function closeEditModal() {
-            editModal.classList.remove('show');
-        }
-
-        function openDeleteModal(commandeId, numeroFacture) {
-            document.getElementById('deleteCommandeId').value = commandeId;
-            document.getElementById('deleteModalText').innerHTML = 
-                `Vous êtes sur le point d'archiver la commande <strong>${numeroFacture}</strong>.`;
-            deleteModal.classList.add('show');
+        function openDeleteModal(id, facture) {
+            document.getElementById('deleteCommandeId').value = id;
+            document.getElementById('deleteModalText').innerHTML = `Vous allez archiver la commande <strong>${facture}</strong>.`;
+            openModal('deleteModalOverlay', 'deleteModalContent');
         }
 
         function closeDeleteModal() {
-            deleteModal.classList.remove('show');
+            closeModal('deleteModalOverlay', 'deleteModalContent');
         }
 
-        // Changer l'état d'une commande
-        function changerEtat(commandeId, nouvelEtat) {
-            if (confirm('Êtes-vous sûr de vouloir changer l\'état de cette commande ?')) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = '';
-                
-                const inputId = document.createElement('input');
-                inputId.type = 'hidden';
-                inputId.name = 'commande_id';
-                inputId.value = commandeId;
-                
-                const inputEtat = document.createElement('input');
-                inputEtat.type = 'hidden';
-                inputEtat.name = 'nouvel_etat';
-                inputEtat.value = nouvelEtat;
-                
-                const inputAction = document.createElement('input');
-                inputAction.type = 'hidden';
-                inputAction.name = 'changer_etat';
-                inputAction.value = '1';
-                
-                form.appendChild(inputId);
-                form.appendChild(inputEtat);
-                form.appendChild(inputAction);
-                document.body.appendChild(form);
-                form.submit();
-            }
-        }
-
-        // Gestion de l'animation des lignes
-        document.addEventListener('DOMContentLoaded', function() {
-            const rows = document.querySelectorAll('.fade-in-row');
-            rows.forEach((row, index) => {
-                row.style.animationDelay = `${index * 0.05}s`;
+        ['commandeModalOverlay', 'deleteModalOverlay'].forEach(id => {
+            document.getElementById(id)?.addEventListener('click', function(e) {
+                if (e.target === this) closeModal(id, id.replace('Overlay', 'Content'));
             });
         });
 
-        // Navigation clavier
-        document.addEventListener('keydown', function(e) {
+        // Escape
+        document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
-                if (commandeModal.classList.contains('show')) closeCommandeModal();
-                if (editModal.classList.contains('show')) closeEditModal();
-                if (deleteModal.classList.contains('show')) closeDeleteModal();
+                closeCommandeModal();
+                closeDeleteModal();
+                if (sidebar.classList.contains('open')) toggleSidebar();
             }
         });
-
-        // Rafraîchissement automatique des statistiques
-        function refreshStats() {
-            fetch('api/commandes_stats.php')
-                .then(response => response.json())
-                .then(data => {
-                    // Mettre à jour les statistiques si nécessaire
-                    console.log('Stats mises à jour:', data);
-                })
-                .catch(error => console.error('Erreur de rafraîchissement:', error));
-        }
-
-        // Rafraîchir toutes les 5 minutes
-        setInterval(refreshStats, 300000);
     </script>
+
+    <?php unset($_SESSION['msg']); ?>
 </body>
+
 </html>
