@@ -453,6 +453,7 @@ try {
       <a href="rapports_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm">
         <i class="fas fa-chart-bar w-4 text-center"></i>Rapports
       </a>
+      <a href="numeros_rideaux.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-tags w-4 text-center"></i>N° Rideaux</a>
       <a href="realisations.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-images w-4 text-center"></i>Réalisations</a>
     </nav>
 

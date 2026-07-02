@@ -1,123 +1,616 @@
+-- phpMyAdmin SQL Dump
+-- version 5.2.1
+-- https://www.phpmyadmin.net/
+--
+-- Host: 127.0.0.1
+-- Generation Time: Jun 28, 2026 at 08:58 AM
+-- Server version: 10.4.32-MariaDB
+-- PHP Version: 8.2.12
 
-# Gestion de stock et de vente des rideaux pour NGS: New Grace Service
-## Stucture de la Db
-
--- Table pour les Boutiques
-CREATE TABLE boutiques (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    nom VARCHAR(100) NOT NULL,
-    email VARCHAR(100),
-    password varchar (100),
-    statut int,-- il est 0 par defaut, Le statut change à 1 quand on supprime une boutique 
-    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
-    actif BOOLEAN DEFAULT TRUE
-);
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
 
 
--- Table pour les utilisateurs
-CREATE TABLE utilisateurs (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    nom_utilisateur VARCHAR(50) UNIQUE NOT NULL,
-    mot_de_passe VARCHAR(255) NOT NULL,
-    role ENUM('PDG', 'IT') NOT NULL,
-    email VARCHAR(100),
-    statut int,-- il est 0 par defaut, Le statut change à 1 quand on supprime un utilisateur 
-    actif BOOLEAN DEFAULT TRUE,
-    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
 
--- Table pour les produits
-CREATE TABLE produits (
-    matricule VARCHAR(255) PRIMARY KEY ,
-    designation VARCHAR(255) NOT NULL,
-    description TEXT,
-    statut int,-- il est 0 par defaut, Le statut change à 1 quand on supprime un produits
-    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
-    actif BOOLEAN DEFAULT TRUE
-);
+--
+-- Database: `vente_rideau`
+--
 
+-- --------------------------------------------------------
 
--- Table pour les Stocks
-CREATE TABLE stock (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-	type_mouvement ENUM('approvisionnement','transfert') DEFAULT 'approvisionnement',
-   -- il est toujours à approvisionnement, le transfert proviendra des transferes
-    boutique_id INT NOT NULL,
-    produit_matricule VARCHAR(20) NOT NULL,  -- IMPORTANT : doit correspondre à produits.matricule
-    quantite DECIMAL(10,3) DEFAULT 0,
-    prix DECIMAL(10,3),
-    seuil_alerte_stock INT DEFAULT 5,
-    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
-    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime un stock
-);
+--
+-- Table structure for table `boutiques`
+--
 
+CREATE TABLE `boutiques` (
+  `id` int(11) NOT NULL,
+  `nom` varchar(100) NOT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `password` varchar(100) DEFAULT NULL,
+  `statut` int(11) DEFAULT NULL,
+  `date_creation` datetime DEFAULT current_timestamp(),
+  `actif` tinyint(1) DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Table pour les commandes (Les ventes)
-CREATE TABLE commandes (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    numero_facture	varchar(50),
-    client_nom	varchar(50),
-    date_commande	datetime,
-    etat	enum('brouillon', 'payee') DEFAULT 'brouillon',
-    boutique_id	int,
-    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime la commande
-);
+--
+-- Dumping data for table `boutiques`
+--
 
+INSERT INTO `boutiques` (`id`, `nom`, `email`, `password`, `statut`, `date_creation`, `actif`) VALUES
+(1, 'Boutique1', 'Bout1@R.com', '$2y$10$xe3qSDF1fmVFWkljrk/ppefcsMO28QyDn7kNApYOnF5lRTP0yYMOm', 0, '2025-12-08 15:11:10', 1),
+(2, 'Boutique2', 'Bout2@R.com', '$2y$10$xe3qSDF1fmVFWkljrk/ppefcsMO28QyDn7kNApYOnF5lRTP0yYMOm', 0, '2025-12-08 15:11:10', 1),
+(3, 'Boutique3', 'Bout3@R.com', '$2y$10$xe3qSDF1fmVFWkljrk/ppefcsMO28QyDn7kNApYOnF5lRTP0yYMOm', 0, '2025-12-10 01:36:38', 1);
 
--- Table pour les détails des commandes (produits vendus)
-CREATE TABLE commande_produits (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    commande_id INT NOT NULL,
-    stock_id INT NOT NULL,
-    quantite DECIMAL(10,3) NOT NULL,
-    prix_unitaire DECIMAL(10,2) NOT NULL,
-    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime un produits de la commande
-);
+-- --------------------------------------------------------
 
+--
+-- Table structure for table `commandes`
+--
 
--- Table pour les paiements 
-CREATE TABLE paiements (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    date DATE DEFAULT NULL,
-    commandes_id INT NOT NULL,
-    montant DECIMAL(10,3) DEFAULT 0.000,
-    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime un paiement
-);
+CREATE TABLE `commandes` (
+  `id` int(11) NOT NULL,
+  `numero_facture` varchar(50) NOT NULL,
+  `client_nom` varchar(50) DEFAULT NULL,
+  `date_commande` datetime DEFAULT current_timestamp(),
+  `etat` enum('brouillon','payee') DEFAULT 'brouillon',
+  `boutique_id` int(11) DEFAULT NULL,
+  `statut` int(11) DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-## Modification Avec la diversification des produits et les transferts.
+--
+-- Dumping data for table `commandes`
+--
 
--- Table pour les produits
-CREATE TABLE produits (
-    matricule VARCHAR(255) PRIMARY KEY ,
-    designation VARCHAR(255) NOT NULL,
-    description TEXT,
-    umProduit ENUM('pieces','metres') DEFAULT 'pieces',
-   -- UM pour Unité de Mesure, ceci permet si le produit se vend par mettres (pour les rideaux) ou par pieces (pour les autres produits)
-    statut int,-- il est 0 par defaut, Le statut change à 1 quand on supprime un produits
-    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
-    actif BOOLEAN DEFAULT TRUE
-);
+INSERT INTO `commandes` (`id`, `numero_facture`, `client_nom`, `date_commande`, `etat`, `boutique_id`, `statut`) VALUES
+(1, 'FACT-20251217-B1-001', 'glad', '2025-12-16 21:14:13', 'payee', 1, 0),
+(8, 'FACT-20251220-B1-001', 'glad', '2025-12-20 23:09:49', 'payee', 1, 0),
+(9, 'FACT-20251220-B1-002', 'JULIEN', '2025-12-20 23:11:21', 'payee', 1, 0),
+(10, 'FACT-B1-001', 'PATRICK', '2025-12-20 23:29:37', 'payee', 1, 0),
+(11, 'FACT-B1-002', 'glad', '2025-12-21 00:35:07', 'payee', 1, 0),
+(12, 'FACT-B1-003', 'ryl', '2025-12-21 01:18:57', 'payee', 1, 0),
+(13, 'FACT-B1-004', 'glad', '2025-12-21 02:34:28', 'payee', 1, 0),
+(14, 'FACT-B1-005', 'glad', '2025-12-21 03:31:29', 'payee', 1, 0),
+(15, 'FACT-B1-006', 'ryl', '2025-12-22 08:25:03', 'payee', 1, 0),
+(16, 'FACT-B1-007', 'LISETTE', '2025-12-29 18:39:06', 'payee', 1, 0),
+(17, 'FACT-B1-008', 'KAMBALE', '2025-12-29 18:47:56', 'payee', 1, 0),
+(18, 'FACT-B2-001', 'PATRICK', '2025-12-29 19:01:20', 'brouillon', 2, 0),
+(19, 'FACT-B2-002', 'glad', '2026-01-02 18:03:36', 'payee', 2, 0),
+(20, 'FACT-B1-009', 'glad', '2026-01-04 23:49:12', 'payee', 1, 0),
+(21, 'FACT-B1-010', 'glad', '2026-01-05 00:41:39', 'brouillon', 1, 0),
+(22, 'FACT-B1-011', 'ryl', '2026-01-21 13:04:37', 'payee', 1, 0),
+(23, 'FACT-B1-012', 'glad', '2026-01-23 09:10:49', 'payee', 1, 0),
+(24, 'FACT-B1-013', 'glad', '2026-03-14 13:44:48', 'payee', 1, 0),
+(25, 'FACT-B1-014', 'JULIEN', '2026-03-14 13:45:51', 'brouillon', 1, 0),
+(26, 'FACT-B1-015', 'glad', '2026-04-24 17:39:14', 'payee', 1, 0),
+(27, 'FACT-B1-016', 'charly', '2026-05-30 11:42:29', 'payee', 1, 0),
+(28, 'FACT-B1-017', 'glad', '2026-06-28 03:05:17', 'brouillon', 1, 0);
 
+-- --------------------------------------------------------
 
--- Table pour les transfert
-CREATE TABLE transferts (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    date DATE DEFAULT NULL,
-    stock_id INT NOT NULL,
-    Expedition INT NOT NULL, -- c'est la boutique qui envois de ces mmarchandises
-    Destination INT NOT NULL, -- c'est la boutique qui recois les marchandises
-    statut INT DEFAULT 0 -- il est 0 par defaut, Le statut change à 1 quand on supprime un transfert
-);
+--
+-- Table structure for table `commande_produits`
+--
 
+CREATE TABLE `commande_produits` (
+  `id` int(11) NOT NULL,
+  `commande_id` int(11) NOT NULL,
+  `stock_id` int(11) NOT NULL,
+  `quantite` decimal(10,3) NOT NULL,
+  `prix_unitaire` decimal(10,2) NOT NULL,
+  `statut` int(11) DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Table pour mouvement de caisse par boutique
-CREATE TABLE mouvement_caisse (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    id_boutique INT, -- il recupere id de la boutique qui enregistre le mouvement
-    type_mouvement ENUM('entrée', 'sortie') NOT NULL,
-    montant DECIMAL(15,2) NOT NULL,
-    motif VARCHAR(200),
-    date_mouvement DATETIME DEFAULT CURRENT_TIMESTAMP,
-    statut int -- il est 0 par defaut, Le statut change à 1 quand on supprime un mouvement  
-);
+--
+-- Dumping data for table `commande_produits`
+--
 
+INSERT INTO `commande_produits` (`id`, `commande_id`, `stock_id`, `quantite`, `prix_unitaire`, `statut`) VALUES
+(1, 1, 1, 2.000, 100.00, 0),
+(2, 1, 1, 3.000, 100.00, 0),
+(3, 1, 1, 1.000, 100.00, 0),
+(4, 8, 1, 12.000, 100.00, 0),
+(5, 8, 1, 2.000, 100.00, 0),
+(6, 9, 1, 2.000, 100.00, 0),
+(7, 10, 1, 6.000, 100.00, 0),
+(8, 11, 1, 2.000, 100.00, 0),
+(9, 12, 1, 2.000, 100.00, 0),
+(10, 13, 2, 50.000, 7.00, 1),
+(11, 13, 3, 5.000, 7.00, 1),
+(12, 13, 1, 5.200, 100.00, 0),
+(13, 13, 2, 5.200, 5.00, 0),
+(14, 14, 3, 10.000, 7.00, 0),
+(15, 15, 2, 2.000, 5.00, 0),
+(16, 15, 3, 2.000, 7.00, 0),
+(17, 16, 2, 20.000, 5.00, 0),
+(18, 16, 3, 1.000, 7.00, 0),
+(19, 17, 2, 10.000, 5.00, 0),
+(20, 17, 3, 2.000, 7.00, 0),
+(21, 17, 1, 10.000, 99.00, 0),
+(22, 18, 4, 5.000, 5.00, 0),
+(23, 19, 4, 1.000, 5.00, 0),
+(24, 20, 2, 15.000, 5.00, 0),
+(25, 20, 2, 12.000, 5.00, 0),
+(26, 20, 3, 5.000, 5.00, 0),
+(27, 21, 1, 2.000, 6.00, 0),
+(28, 21, 2, 5.000, 5.00, 0),
+(29, 21, 3, 3.000, 5.00, 0),
+(30, 22, 3, 7.000, 5.00, 0),
+(31, 23, 3, 2.000, 5.00, 0),
+(32, 24, 6, 20.000, 6.00, 0),
+(33, 26, 6, 19.999, 5.00, 0),
+(34, 26, 3, 81.000, 5.00, 0),
+(35, 26, 1, 10.000, 6.00, 0),
+(36, 27, 2, 2.000, 5.00, 0),
+(37, 27, 3, 2.000, 5.00, 0);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `demandes_service`
+--
+
+CREATE TABLE `demandes_service` (
+  `id` int(11) NOT NULL,
+  `realisation_id` int(11) NOT NULL,
+  `boutique_id` int(11) NOT NULL,
+  `client_nom` varchar(100) NOT NULL,
+  `client_email` varchar(100) DEFAULT NULL,
+  `client_telephone` varchar(20) NOT NULL,
+  `client_ville` varchar(100) DEFAULT NULL,
+  `message` text DEFAULT NULL,
+  `type_produit` varchar(200) DEFAULT NULL,
+  `budget_estime` decimal(10,2) DEFAULT NULL,
+  `statut` enum('nouvelle','contactee','en_cours','terminee','annulee') DEFAULT 'nouvelle',
+  `notes_admin` text DEFAULT NULL,
+  `date_creation` datetime DEFAULT current_timestamp(),
+  `date_traitement` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `mouvement_caisse`
+--
+
+CREATE TABLE `mouvement_caisse` (
+  `id` int(11) NOT NULL,
+  `id_boutique` int(11) DEFAULT NULL,
+  `type_mouvement` enum('entrée','sortie') NOT NULL,
+  `montant` decimal(15,2) NOT NULL,
+  `motif` varchar(200) DEFAULT NULL,
+  `date_mouvement` datetime DEFAULT current_timestamp(),
+  `statut` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `mouvement_caisse`
+--
+
+INSERT INTO `mouvement_caisse` (`id`, `id_boutique`, `type_mouvement`, `montant`, `motif`, `date_mouvement`, `statut`) VALUES
+(1, 1, 'entrée', 6.00, 'Donnnations', '2026-01-03 15:53:17', 0);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `numeros_rideaux`
+--
+
+CREATE TABLE `numeros_rideaux` (
+  `id` int(11) NOT NULL,
+  `boutique_id` int(11) NOT NULL,
+  `numero_rideau` varchar(50) NOT NULL COMMENT 'Numéro unique du rideau (ex: R001, R002, CASH-001)',
+  `est_utilise` tinyint(1) DEFAULT 0 COMMENT '0 = disponible, 1 = déjà attribué à un stock',
+  `date_creation` datetime DEFAULT current_timestamp(),
+  `actif` tinyint(1) DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `numeros_rideaux`
+--
+
+INSERT INTO `numeros_rideaux` (`id`, `boutique_id`, `numero_rideau`, `est_utilise`, `date_creation`, `actif`) VALUES
+(1, 1, 'R001', 0, '2026-06-28 03:46:05', 1),
+(2, 1, 'R002', 0, '2026-06-28 03:46:05', 1),
+(3, 1, 'R003', 0, '2026-06-28 03:46:05', 1),
+(4, 1, 'R004', 0, '2026-06-28 03:46:05', 1),
+(5, 1, 'R005', 0, '2026-06-28 03:46:05', 1),
+(6, 1, 'R006', 0, '2026-06-28 03:46:05', 1),
+(7, 1, 'R007', 0, '2026-06-28 03:46:05', 1),
+(8, 1, 'R008', 0, '2026-06-28 03:46:05', 1),
+(9, 1, 'R009', 0, '2026-06-28 03:46:05', 1),
+(10, 1, 'R010', 0, '2026-06-28 03:46:05', 1);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `paiements`
+--
+
+CREATE TABLE `paiements` (
+  `id` int(11) NOT NULL,
+  `date` date DEFAULT NULL,
+  `commandes_id` int(11) NOT NULL,
+  `montant` decimal(10,3) DEFAULT 0.000,
+  `statut` int(11) DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `paiements`
+--
+
+INSERT INTO `paiements` (`id`, `date`, `commandes_id`, `montant`, `statut`) VALUES
+(1, '2025-12-17', 1, 10.000, 0),
+(2, '2025-12-17', 1, 90.000, 0),
+(3, '2025-12-20', 10, 600.000, 0),
+(4, '2025-12-21', 11, 200.000, 0),
+(5, '2025-12-21', 12, 200.000, 0),
+(6, '2025-12-21', 13, 546.000, 0),
+(7, '2025-12-21', 14, 70.000, 0),
+(8, '2025-12-22', 15, 24.000, 0),
+(9, '2025-12-29', 16, 107.000, 0),
+(10, '2025-12-29', 17, 1054.000, 0),
+(11, '2026-01-02', 18, 5.000, 0),
+(12, '2026-01-02', 19, 5.000, 0),
+(13, '2026-01-03', 8, 1400.000, 0),
+(14, '2026-01-04', 9, 200.000, 0),
+(15, '2026-01-04', 20, 160.000, 0),
+(16, '2026-01-05', 21, 2.000, 0),
+(17, '2026-01-05', 21, 10.000, 0),
+(18, '2026-01-21', 21, 10.000, 0),
+(19, '2026-01-21', 22, 35.000, 0),
+(20, '2026-01-23', 23, 10.000, 0),
+(21, '2026-03-14', 24, 120.000, 0),
+(22, '2026-04-24', 26, 564.995, 0),
+(23, '2026-05-30', 27, 20.000, 0),
+(24, '2026-06-13', 21, 5.000, 0),
+(25, '2026-06-13', 21, 2.000, 0),
+(26, '2026-06-14', 21, 1.000, 0),
+(27, '2026-06-14', 21, 2.000, 0),
+(28, '2026-06-14', 21, 1.000, 0);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `produits`
+--
+
+CREATE TABLE `produits` (
+  `matricule` varchar(255) NOT NULL,
+  `designation` varchar(255) NOT NULL,
+  `description` text DEFAULT NULL,
+  `umProduit` enum('pieces','metres') DEFAULT 'pieces',
+  `statut` int(11) DEFAULT NULL,
+  `date_creation` datetime DEFAULT current_timestamp(),
+  `actif` tinyint(1) DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `produits`
+--
+
+INSERT INTO `produits` (`matricule`, `designation`, `description`, `umProduit`, `statut`, `date_creation`, `actif`) VALUES
+('Pcs-001', 'Table', NULL, 'pieces', 0, '2025-12-21 01:51:24', 1),
+('Pcs-002', 'Moustiquaire', NULL, 'pieces', 0, '2025-12-21 01:51:59', 1),
+('Rid-001', 'Cashmir', NULL, 'metres', 0, '2025-12-21 01:50:58', 1),
+('Rid-002', 'velour', NULL, 'metres', 0, '2025-12-21 01:51:41', 1);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `realisations`
+--
+
+CREATE TABLE `realisations` (
+  `id` int(11) NOT NULL,
+  `boutique_id` int(11) NOT NULL,
+  `titre` varchar(200) NOT NULL,
+  `description` text DEFAULT NULL,
+  `image_principale` varchar(500) NOT NULL,
+  `categorie` enum('rideaux','voilages','stores','installation','sur_mesure','autre') DEFAULT 'autre',
+  `date_realisation` date DEFAULT NULL,
+  `client_nom` varchar(100) DEFAULT NULL,
+  `client_ville` varchar(100) DEFAULT NULL,
+  `prix_indicatif` decimal(10,2) DEFAULT NULL,
+  `est_publie` tinyint(1) DEFAULT 1,
+  `statut` int(11) DEFAULT 0,
+  `date_creation` datetime DEFAULT current_timestamp(),
+  `date_modification` datetime DEFAULT NULL ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `realisation_images`
+--
+
+CREATE TABLE `realisation_images` (
+  `id` int(11) NOT NULL,
+  `realisation_id` int(11) NOT NULL,
+  `image_url` varchar(500) NOT NULL,
+  `ordre` int(11) DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `realisation_likes`
+--
+
+CREATE TABLE `realisation_likes` (
+  `id` int(11) NOT NULL,
+  `realisation_id` int(11) NOT NULL,
+  `session_id` varchar(100) NOT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `date_like` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `stock`
+--
+
+CREATE TABLE `stock` (
+  `id` int(11) NOT NULL,
+  `type_mouvement` enum('approvisionnement','transfert') DEFAULT 'approvisionnement',
+  `boutique_id` int(11) NOT NULL,
+  `produit_matricule` varchar(20) NOT NULL,
+  `numero_rideau_id` int(11) DEFAULT NULL COMMENT 'ID du numéro de rideau attribué à ce stock',
+  `quantite` decimal(10,3) DEFAULT 0.000,
+  `prix` decimal(10,3) DEFAULT NULL,
+  `seuil_alerte_stock` int(11) DEFAULT 5,
+  `date_creation` datetime DEFAULT current_timestamp(),
+  `statut` int(11) DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `stock`
+--
+
+INSERT INTO `stock` (`id`, `type_mouvement`, `boutique_id`, `produit_matricule`, `numero_rideau_id`, `quantite`, `prix`, `seuil_alerte_stock`, `date_creation`, `statut`) VALUES
+(1, 'approvisionnement', 1, 'Rid-002', NULL, 103.000, 6.000, 5, '2026-01-04 12:19:53', 0),
+(2, 'approvisionnement', 1, 'Rid-001', NULL, 120.500, 5.000, 5, '2026-01-04 12:12:30', 0),
+(3, 'approvisionnement', 1, 'Pcs-002', NULL, 170.000, 5.000, 5, '2026-05-11 10:58:53', 0),
+(4, 'transfert', 2, 'Rid-001', NULL, 20.500, 5.000, 5, '2025-12-29 13:56:52', 0),
+(5, 'approvisionnement', 1, 'Rid-002', NULL, 10.000, 5.000, 5, '2026-01-04 12:34:14', 0),
+(6, 'approvisionnement', 1, 'Rid-001', NULL, 100.000, 6.000, 5, '2026-01-22 04:21:57', 0),
+(7, 'transfert', 3, 'Rid-001', NULL, 9.000, 5.000, 5, '2026-01-22 05:03:21', 0),
+(8, 'approvisionnement', 1, 'Pcs-001', NULL, 200.000, 2.500, 5, '2026-04-24 17:43:39', 0);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `transferts`
+--
+
+CREATE TABLE `transferts` (
+  `id` int(11) NOT NULL,
+  `date` date DEFAULT NULL,
+  `stock_id` int(11) NOT NULL,
+  `Expedition` int(11) NOT NULL,
+  `Destination` int(11) NOT NULL,
+  `statut` int(11) DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `transferts`
+--
+
+INSERT INTO `transferts` (`id`, `date`, `stock_id`, `Expedition`, `Destination`, `statut`) VALUES
+(1, '2025-12-29', 2, 1, 2, 0),
+(2, '2026-01-22', 2, 1, 3, 0),
+(3, '2026-06-13', 2, 1, 2, 0);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `utilisateurs`
+--
+
+CREATE TABLE `utilisateurs` (
+  `id` int(11) NOT NULL,
+  `nom_utilisateur` varchar(50) NOT NULL,
+  `mot_de_passe` varchar(255) NOT NULL,
+  `role` enum('PDG','IT') NOT NULL,
+  `email` varchar(100) DEFAULT NULL,
+  `statut` int(11) DEFAULT NULL,
+  `actif` tinyint(1) DEFAULT 1,
+  `date_creation` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `utilisateurs`
+--
+
+INSERT INTO `utilisateurs` (`id`, `nom_utilisateur`, `mot_de_passe`, `role`, `email`, `statut`, `actif`, `date_creation`) VALUES
+(1, 'Glad', '$2y$10$mVE4.LN4Ui/2cciReF.ucOkFEsdv//Jsnoise27WWMXnAQOK92Q9i', 'PDG', 'Glad@R.com', 0, 1, '2025-12-08 15:08:04'),
+(2, 'Rylah', '$2y$10$mVE4.LN4Ui/2cciReF.ucOkFEsdv//Jsnoise27WWMXnAQOK92Q9i', 'IT', 'Muvunga@R.com', 0, 1, '2025-12-08 15:08:04'),
+(3, 'Grace', '$2y$10$f8CxDTBLMtiRiUoisHeT3uXc809YTpa91wwVKYmXaEgljd.pwL6Qy', 'PDG', 'Grace@R.com', 0, 1, '2026-01-04 16:52:20'),
+(4, 'Albert', '$2y$10$2cK6Q6UNJIpHle3u2hDR1uTYL8dLIhXxlRykvORtvHtT4cAwAfuH.', 'IT', 'Albert@R.com', 0, 1, '2026-06-13 03:39:05');
+
+--
+-- Indexes for dumped tables
+--
+
+--
+-- Indexes for table `boutiques`
+--
+ALTER TABLE `boutiques`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `commandes`
+--
+ALTER TABLE `commandes`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `numero_facture` (`numero_facture`);
+
+--
+-- Indexes for table `commande_produits`
+--
+ALTER TABLE `commande_produits`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `demandes_service`
+--
+ALTER TABLE `demandes_service`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `mouvement_caisse`
+--
+ALTER TABLE `mouvement_caisse`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `numeros_rideaux`
+--
+ALTER TABLE `numeros_rideaux`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_numero_boutique` (`boutique_id`,`numero_rideau`),
+  ADD KEY `idx_boutique` (`boutique_id`),
+  ADD KEY `idx_disponible` (`boutique_id`,`est_utilise`);
+
+--
+-- Indexes for table `paiements`
+--
+ALTER TABLE `paiements`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `produits`
+--
+ALTER TABLE `produits`
+  ADD PRIMARY KEY (`matricule`);
+
+--
+-- Indexes for table `realisations`
+--
+ALTER TABLE `realisations`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `realisation_images`
+--
+ALTER TABLE `realisation_images`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `realisation_likes`
+--
+ALTER TABLE `realisation_likes`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_like` (`realisation_id`,`session_id`);
+
+--
+-- Indexes for table `stock`
+--
+ALTER TABLE `stock`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_numero_rideau` (`numero_rideau_id`);
+
+--
+-- Indexes for table `transferts`
+--
+ALTER TABLE `transferts`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `utilisateurs`
+--
+ALTER TABLE `utilisateurs`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `nom_utilisateur` (`nom_utilisateur`);
+
+--
+-- AUTO_INCREMENT for dumped tables
+--
+
+--
+-- AUTO_INCREMENT for table `boutiques`
+--
+ALTER TABLE `boutiques`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `commandes`
+--
+ALTER TABLE `commandes`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=29;
+
+--
+-- AUTO_INCREMENT for table `commande_produits`
+--
+ALTER TABLE `commande_produits`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=38;
+
+--
+-- AUTO_INCREMENT for table `demandes_service`
+--
+ALTER TABLE `demandes_service`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `mouvement_caisse`
+--
+ALTER TABLE `mouvement_caisse`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `numeros_rideaux`
+--
+ALTER TABLE `numeros_rideaux`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+
+--
+-- AUTO_INCREMENT for table `paiements`
+--
+ALTER TABLE `paiements`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=29;
+
+--
+-- AUTO_INCREMENT for table `realisations`
+--
+ALTER TABLE `realisations`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `realisation_images`
+--
+ALTER TABLE `realisation_images`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `realisation_likes`
+--
+ALTER TABLE `realisation_likes`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `stock`
+--
+ALTER TABLE `stock`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `transferts`
+--
+ALTER TABLE `transferts`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `utilisateurs`
+--
+ALTER TABLE `utilisateurs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+COMMIT;
+
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;

@@ -65,12 +65,28 @@ CREATE TABLE `demandes_service` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ============================================
--- DONNÉES DE TEST (optionnel - pour avoir des réalisations à afficher)
+-- NOUVELLE TABLE : numeros_rideaux
+-- Stocke les numéros de rideaux par boutique
 -- ============================================
-INSERT INTO `realisations` (`boutique_id`, `titre`, `description`, `image_principale`, `categorie`, `date_realisation`, `client_nom`, `client_ville`, `prix_indicatif`) VALUES
-(1, 'Rideaux en velours pour salon luxueux', 'Magnifique installation de rideaux en velours bleu nuit pour un salon de 40m². Tissu premium avec doublure thermique pour une isolation parfaite.', 'https://images.unsplash.com/photo-1618220179428-22790b461013?w=800', 'rideaux', '2026-05-15', 'Mme Kabuo', 'Butembo', 450.00),
-(1, 'Voilages aériens pour chambre parentale', 'Pose de voilages en organza de soie naturelle dans une chambre parentale. Effet vaporeux et lumineux garanti pour un réveil tout en douceur.', 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800', 'voilages', '2026-04-20', 'Dr Mulumba', 'Butembo', 280.00),
-(2, 'Stores japonais motorisés pour bureau', 'Installation de stores japonais motorisés avec télécommande dans un bureau professionnel. Design épuré et contrôle précis de la lumière naturelle.', 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800', 'stores', '2026-03-10', 'Cabinet Juridique Mbayahi', 'Beni', 720.00),
-(1, 'Rideaux occultants pour cinéma maison', 'Création sur mesure de rideaux occultants en tissu triple épaisseur pour une salle de projection privée. Noir total garanti même en plein jour.', 'https://images.unsplash.com/photo-1616046229478-9901c5536a45?w=800', 'rideaux', '2026-02-28', 'M. Kambale', 'Butembo', 580.00),
-(1, 'Voilages anti-UV pour véranda', 'Installation de voilages techniques anti-UV protégeant votre mobilier tout en laissant passer la lumière. Solution idéale pour les vérandas exposées.', 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=800', 'voilages', '2026-05-01', 'Famille Paluku', 'Butembo', 350.00),
-(3, 'Rideaux traditionnels africains', 'Réalisation de rideaux en wax africain authentique pour une décoration chaleureuse et colorée. Chaque pièce est unique.', 'https://images.unsplash.com/photo-1616046229478-9901c5536a45?w=800', 'rideaux', '2026-04-10', 'Mme Kahindo', 'Bunia', 390.00);
+CREATE TABLE `numeros_rideaux` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `boutique_id` int(11) NOT NULL,
+  `numero_rideau` varchar(50) NOT NULL COMMENT 'Numéro unique du rideau (ex: R001, R002, CASH-001)',
+  `est_utilise` tinyint(1) DEFAULT 0 COMMENT '0 = disponible, 1 = déjà attribué à un stock',
+  `date_creation` datetime DEFAULT current_timestamp(),
+  `actif` tinyint(1) DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `unique_numero_boutique` (`boutique_id`, `numero_rideau`),
+  KEY `idx_boutique` (`boutique_id`),
+  KEY `idx_disponible` (`boutique_id`, `est_utilise`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ============================================
+-- MODIFICATION TABLE : stock
+-- Ajouter une colonne pour lier un stock à un numéro de rideau
+-- ============================================
+ALTER TABLE `stock` 
+ADD COLUMN `numero_rideau_id` int(11) DEFAULT NULL COMMENT 'ID du numéro de rideau attribué à ce stock' AFTER `produit_matricule`,
+ADD KEY `idx_numero_rideau` (`numero_rideau_id`);
+
+ALTER TABLE `realisations` DROP COLUMN `prix_indicatif`;

@@ -49,7 +49,17 @@ try {
 
 // Produits de la commande
 try {
-    $query = $pdo->prepare("SELECT cp.id as commande_produit_id, cp.quantite, cp.prix_unitaire, s.id as stock_id, p.matricule, p.designation, p.umProduit, (cp.quantite * cp.prix_unitaire) as total_ligne FROM commande_produits cp JOIN stock s ON cp.stock_id = s.id JOIN produits p ON s.produit_matricule = p.matricule WHERE cp.commande_id = ? AND cp.statut = 0 AND s.statut = 0 AND p.statut = 0 ORDER BY cp.id DESC");
+    $query = $pdo->prepare("
+        SELECT cp.id as commande_produit_id, cp.quantite, cp.prix_unitaire, s.id as stock_id, 
+               p.matricule, p.designation, p.umProduit, nr.numero_rideau,
+               (cp.quantite * cp.prix_unitaire) as total_ligne 
+        FROM commande_produits cp 
+        JOIN stock s ON cp.stock_id = s.id 
+        JOIN produits p ON s.produit_matricule = p.matricule 
+        LEFT JOIN numeros_rideaux nr ON s.numero_rideau_id = nr.id
+        WHERE cp.commande_id = ? AND cp.statut = 0 AND s.statut = 0 AND p.statut = 0 
+        ORDER BY cp.id DESC
+    ");
     $query->execute([$commande_id]);
     $produits_commande = $query->fetchAll(PDO::FETCH_ASSOC);
     $total_commande = array_sum(array_column($produits_commande, 'total_ligne'));
@@ -71,9 +81,18 @@ try {
     $reste_a_payer = $total_commande;
 }
 
-// Produits disponibles
+// Produits disponibles avec numéro de rideau
 try {
-    $query = $pdo->prepare("SELECT s.id as stock_id, s.quantite as stock_initial, s.prix, s.seuil_alerte_stock, p.matricule, p.designation, p.umProduit, COALESCE((SELECT SUM(cp2.quantite) FROM commande_produits cp2 WHERE cp2.stock_id = s.id AND cp2.statut = 0 AND cp2.commande_id != ?), 0) as deja_commande FROM stock s JOIN produits p ON s.produit_matricule = p.matricule WHERE s.boutique_id = ? AND s.statut = 0 AND p.statut = 0 AND p.actif = 1 ORDER BY p.designation");
+    $query = $pdo->prepare("
+        SELECT s.id as stock_id, s.quantite as stock_initial, s.prix, s.seuil_alerte_stock,
+               p.matricule, p.designation, p.umProduit, nr.numero_rideau, nr.id as numero_rideau_id,
+               COALESCE((SELECT SUM(cp2.quantite) FROM commande_produits cp2 WHERE cp2.stock_id = s.id AND cp2.statut = 0 AND cp2.commande_id != ?), 0) as deja_commande
+        FROM stock s 
+        JOIN produits p ON s.produit_matricule = p.matricule 
+        LEFT JOIN numeros_rideaux nr ON s.numero_rideau_id = nr.id
+        WHERE s.boutique_id = ? AND s.statut = 0 AND p.statut = 0 AND p.actif = 1 
+        ORDER BY p.designation, nr.numero_rideau
+    ");
     $query->execute([$commande_id, $boutique_id]);
     $produits_base = $query->fetchAll(PDO::FETCH_ASSOC);
     $produits_disponibles = [];
@@ -96,12 +115,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $stock_id = (int)$_POST['stock_id'];
             $quantite_demandee = (float)$_POST['quantite'];
-            $query = $pdo->prepare("SELECT s.quantite, s.prix, p.designation, p.umProduit FROM stock s JOIN produits p ON s.produit_matricule = p.matricule WHERE s.id = ? AND s.boutique_id = ? AND s.statut = 0");
+            
+            // Vérifier que le stock appartient à la boutique
+            $query = $pdo->prepare("
+                SELECT s.quantite, s.prix, p.designation, p.umProduit, nr.numero_rideau 
+                FROM stock s 
+                JOIN produits p ON s.produit_matricule = p.matricule 
+                LEFT JOIN numeros_rideaux nr ON s.numero_rideau_id = nr.id
+                WHERE s.id = ? AND s.boutique_id = ? AND s.statut = 0
+            ");
             $query->execute([$stock_id, $boutique_id]);
             $stock = $query->fetch(PDO::FETCH_ASSOC);
             if (!$stock) throw new Exception("Stock non trouvé");
-            if ($stock['umProduit'] == 'pieces' && fmod($quantite_demandee, 1) != 0) throw new Exception("Quantité entière requise pour les pièces");
-
+            
+            // Vérifier le stock disponible
             $query = $pdo->prepare("SELECT COALESCE(SUM(quantite),0) FROM commande_produits WHERE stock_id=? AND commande_id!=? AND statut=0");
             $query->execute([$stock_id, $commande_id]);
             $deja_autres = $query->fetchColumn();
@@ -138,7 +165,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $query->execute([$id]);
             $p = $query->fetch(PDO::FETCH_ASSOC);
             if (!$p) throw new Exception("Produit non trouvé");
-            if ($p['umProduit'] == 'pieces' && fmod($qte, 1) != 0) throw new Exception("Entier requis");
+            
+            // Vérifier le stock disponible
             $query = $pdo->prepare("SELECT COALESCE(SUM(quantite),0) FROM commande_produits WHERE stock_id=(SELECT stock_id FROM commande_produits WHERE id=?) AND commande_id!=? AND id!=? AND statut=0");
             $query->execute([$id, $commande_id, $id]);
             $autres = $query->fetchColumn();
@@ -433,8 +461,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: #fcd34d;
         }
 
-        @media print {
+        /* Autocomplétion */
+        .produit-search-wrapper {
+            position: relative;
+        }
 
+        .produit-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 0.75rem;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 50;
+            display: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .produit-suggestions.show {
+            display: block;
+        }
+
+        .produit-suggestion-item {
+            padding: 0.625rem 1rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+        }
+
+        .produit-suggestion-item:hover {
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        @media print {
             .sidebar,
             header,
             .print\:hidden,
@@ -444,13 +506,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             .no-print {
                 display: none !important;
             }
-
             body {
                 background: white !important;
                 font-size: 12pt;
                 padding: 20px;
             }
-
             .premium-card {
                 box-shadow: none !important;
                 border: 1px solid #ddd !important;
@@ -468,7 +528,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 opacity: 0;
                 transform: translateY(16px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -483,7 +542,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             .sidebar {
                 transform: translateX(-100%);
             }
-
             .sidebar.open {
                 transform: translateX(0);
             }
@@ -500,18 +558,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="p-5 border-b border-white/10 flex-shrink-0">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg"><span class="font-bold text-white">NGS</span></div>
-                <div>
-                    <h2 class="font-bold text-sm">NGS Pro</h2>
-                    <p class="text-[10px] text-gray-400">Dashboard Boutique</p>
-                </div>
+                <div><h2 class="font-bold text-sm">NGS Pro</h2><p class="text-[10px] text-gray-400">Dashboard Boutique</p></div>
             </div>
         </div>
         <div class="p-5 border-b border-white/10 flex-shrink-0">
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center"><i class="fas fa-store text-emerald-400"></i></div>
-                <div class="min-w-0">
-                    <p class="font-semibold text-sm truncate"><?= htmlspecialchars($_SESSION['boutique_nom'] ?? 'Boutique') ?></p>
-                </div>
+                <div class="min-w-0"><p class="font-semibold text-sm truncate"><?= htmlspecialchars($_SESSION['boutique_nom'] ?? 'Boutique') ?></p></div>
             </div>
         </div>
         <nav class="flex-1 overflow-y-auto p-3 space-y-1">
@@ -522,12 +575,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <a href="mouvements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-exchange-alt w-4 text-center"></i>Mouvements Caisse</a>
             <a href="transferts-boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-truck-loading w-4 text-center"></i>Transferts</a>
             <a href="rapports_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-bar w-4 text-center"></i>Rapports</a>
+            <a href="numeros_rideaux.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-tags w-4 text-center"></i>N° Rideaux</a>
+
         </nav>
         <div class="p-3 border-t border-white/10 flex-shrink-0">
-            <div class="flex items-center justify-between px-3 py-2 mb-2">
-                <span class="text-xs text-gray-400"><i class="fas fa-moon mr-1"></i>Thème</span>
-                <button id="theme-toggle" class="theme-toggle" aria-label="Changer le thème"></button>
-            </div>
+            <div class="flex items-center justify-between px-3 py-2 mb-2"><span class="text-xs text-gray-400"><i class="fas fa-moon mr-1"></i>Thème</span><button id="theme-toggle" class="theme-toggle" aria-label="Changer le thème"></button></div>
             <a href="../models/logout.php" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors text-sm"><i class="fas fa-sign-out-alt w-4 text-center"></i>Déconnexion</a>
         </div>
     </aside>
@@ -594,18 +646,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 text-sm text-amber-700 dark:text-amber-300"><i class="fas fa-exclamation-triangle mr-1"></i>Aucun produit disponible en stock</div>
                     <?php else: ?>
                         <form method="POST" action="" class="space-y-3">
+                            <!-- Recherche de produit par nom avec numéro de rideau -->
                             <div>
                                 <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Produit</label>
-                                <select name="stock_id" id="stockSelect" required class="w-full input-glass px-3 py-2.5 text-sm" onchange="updateInfo()">
-                                    <option value="">Sélectionnez...</option>
-                                    <?php foreach ($produits_disponibles as $p):
-                                        $ut = $p['umProduit'] == 'metres' ? 'mètres' : 'pièces';
-                                    ?>
-                                        <option value="<?= $p['stock_id'] ?>" data-stock="<?= $p['stock_disponible'] ?>" data-prix="<?= $p['prix'] ?>" data-unite="<?= $p['umProduit'] ?>">
-                                            <?= htmlspecialchars($p['designation']) ?> (<?= number_format($p['stock_disponible'], 3) ?> <?= $ut ?>)
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
+                                <div class="produit-search-wrapper">
+                                    <input type="text" id="produitSearch" 
+                                           class="w-full input-glass px-3 py-2.5 text-sm" 
+                                           placeholder="Tapez le nom du produit ou le numéro de rideau..."
+                                           autocomplete="off"
+                                           oninput="filterProduits()"
+                                           onfocus="filterProduits()">
+                                    <div id="produitSuggestions" class="produit-suggestions"></div>
+                                </div>
+                                <input type="hidden" name="stock_id" id="stockHidden">
+                                <div id="produitInfo" class="hidden mt-2 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30 text-xs">
+                                    <p><strong>Produit :</strong> <span id="infoDesignation">-</span></p>
+                                    <?php if (isset($produits_disponibles[0]['numero_rideau'])): ?>
+                                        <p><strong>N° Rideau :</strong> <span id="infoNumeroRideau" class="text-amber-600 dark:text-amber-400 font-medium">-</span></p>
+                                    <?php endif; ?>
+                                    <p><strong>Stock dispo :</strong> <span id="infoStock">-</span></p>
+                                    <p><strong>Prix :</strong> <span id="infoPrix">-</span> $</p>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Prix unitaire ($)</label>
@@ -635,10 +696,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <?php if (!empty($produits_commande)): ?>
                         <div class="overflow-x-auto">
-                            <table class="w-full min-w-[600px]">
+                            <table class="w-full min-w-[700px]">
                                 <thead>
                                     <tr class="border-b border-[var(--divider)] text-left">
                                         <th class="px-4 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Produit</th>
+                                        <th class="px-4 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">N° Rideau</th>
                                         <th class="px-4 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Réf</th>
                                         <th class="px-4 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Qté</th>
                                         <th class="px-4 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Prix</th>
@@ -654,6 +716,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             <td class="px-4 py-3.5 text-sm text-[var(--text-primary)]">
                                                 <span class="font-medium"><?= htmlspecialchars($p['designation']) ?></span>
                                                 <span class="text-xs text-[var(--text-muted)] block"><?= $ut ?></span>
+                                            </td>
+                                            <td class="px-4 py-3.5">
+                                                <?php if (!empty($p['numero_rideau'])): ?>
+                                                    <span class="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                                        <i class="fas fa-tag mr-1"></i><?= htmlspecialchars($p['numero_rideau']) ?>
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="text-xs text-[var(--text-muted)]">-</span>
+                                                <?php endif; ?>
                                             </td>
                                             <td class="px-4 py-3.5 text-sm font-mono text-[var(--text-secondary)]"><?= $p['matricule'] ?></td>
                                             <td class="px-4 py-3.5 text-sm text-[var(--text-primary)]">
@@ -788,45 +859,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <script>
+        // Données des produits disponibles avec numéro de rideau
+        const produitsDisponibles = <?= json_encode($produits_disponibles) ?>;
+
         // Theme
         const themeToggle = document.getElementById('theme-toggle');
         const html = document.documentElement;
         if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) html.classList.add('dark');
-        themeToggle.addEventListener('click', () => {
-            html.classList.toggle('dark');
-            localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
-        });
+        themeToggle.addEventListener('click', () => { html.classList.toggle('dark'); localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light'); });
 
         // Sidebar
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('overlay');
-
-        function toggleSidebar() {
-            sidebar.classList.toggle('open');
-            overlay.classList.toggle('hidden');
-        }
+        function toggleSidebar() { sidebar.classList.toggle('open'); overlay.classList.toggle('hidden'); }
         document.getElementById('mobileMenuBtn').addEventListener('click', toggleSidebar);
         overlay.addEventListener('click', toggleSidebar);
 
         // Modals
-        function openModal(type) {
-            document.getElementById(type + 'Overlay').classList.remove('hidden');
-            document.getElementById(type + 'Content').classList.remove('hidden');
-        }
-
-        function closeModal(type) {
-            document.getElementById(type + 'Overlay').classList.add('hidden');
-            document.getElementById(type + 'Content').classList.add('hidden');
-        }
-
-        function openAnnulationModal() {
-            openModal('annulation');
-        }
-
-        function openPaiementModal() {
-            openModal('paiement');
-        }
-
+        function openModal(type) { document.getElementById(type + 'Overlay').classList.remove('hidden'); document.getElementById(type + 'Content').classList.remove('hidden'); }
+        function closeModal(type) { document.getElementById(type + 'Overlay').classList.add('hidden'); document.getElementById(type + 'Content').classList.add('hidden'); }
+        function openAnnulationModal() { openModal('annulation'); }
+        function openPaiementModal() { openModal('paiement'); }
         function openQtModal(id, qte, unite) {
             document.getElementById('qtId').value = id;
             document.getElementById('qtVal').value = qte;
@@ -834,54 +887,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const ut = unite === 'metres' ? 'mètres' : 'pièces';
             document.getElementById('qtLabel').textContent = ut;
             document.getElementById('qtActuelle').textContent = qte + ' ' + ut;
-            document.getElementById('qtVal').step = unite === 'pieces' ? 1 : 0.001;
-            document.getElementById('qtVal').min = unite === 'pieces' ? 1 : 0.001;
+            document.getElementById('qtVal').step = 0.001;
+            document.getElementById('qtVal').min = 0.001;
             openModal('qt');
         }
-
         function openPrixModal(id, prix) {
             document.getElementById('prixId').value = id;
             document.getElementById('prixVal').value = prix;
             document.getElementById('prixActuel').textContent = prix;
             openModal('prix');
         }
-
         function openRetirerModal(id, nom) {
             document.getElementById('retirerId').value = id;
             document.getElementById('retirerNom').textContent = '« ' + nom + ' »';
             openModal('retirer');
         }
 
-        // Close on overlay
         ['annulation', 'paiement', 'qt', 'prix', 'retirer'].forEach(t => {
-            document.getElementById(t + 'Overlay')?.addEventListener('click', function(e) {
-                if (e.target === this) closeModal(t);
-            });
+            document.getElementById(t + 'Overlay')?.addEventListener('click', function(e) { if (e.target === this) closeModal(t); });
         });
 
-        // Stock info
-        function updateInfo() {
-            const sel = document.getElementById('stockSelect');
-            const opt = sel.options[sel.selectedIndex];
-            if (opt && opt.value) {
-                document.getElementById('maxQte').textContent = parseFloat(opt.dataset.stock).toFixed(3);
-                document.getElementById('prixInput').value = parseFloat(opt.dataset.prix).toFixed(2);
-                const u = opt.dataset.unite === 'metres' ? 'mètres' : 'pièces';
-                document.getElementById('uniteLabel').textContent = u;
-                document.getElementById('qteInput').step = opt.dataset.unite === 'pieces' ? 1 : 0.001;
-                document.getElementById('qteInput').min = opt.dataset.unite === 'pieces' ? 1 : 0.001;
-                document.getElementById('qteInput').value = '';
+        // Autocomplétion des produits avec recherche sur nom ET numéro de rideau
+        function filterProduits() {
+            const searchTerm = document.getElementById('produitSearch').value.toLowerCase();
+            const suggestions = document.getElementById('produitSuggestions');
+            
+            if (searchTerm.length === 0) { suggestions.classList.remove('show'); return; }
+
+            // Recherche sur la désignation OU le numéro de rideau
+            const filtered = produitsDisponibles.filter(p => 
+                p.designation.toLowerCase().includes(searchTerm) ||
+                (p.numero_rideau && p.numero_rideau.toLowerCase().includes(searchTerm))
+            );
+            
+            if (filtered.length === 0) {
+                suggestions.innerHTML = '<div class="produit-suggestion-item text-[var(--text-muted)]">Aucun produit trouvé</div>';
+            } else {
+                suggestions.innerHTML = filtered.map(p => {
+                    const ut = p.umProduit === 'metres' ? 'mètres' : 'pièces';
+                    const numeroDisplay = p.numero_rideau ? `<span class="text-xs text-amber-500">🔖 ${p.numero_rideau}</span>` : '';
+                    return `<div class="produit-suggestion-item" onclick="selectProduit(${p.stock_id}, '${p.designation.replace(/'/g, "\\'")}', ${p.stock_disponible}, ${p.prix}, '${p.umProduit}', '${p.numero_rideau ? p.numero_rideau.replace(/'/g, "\\'") : ''}')">
+                        ${p.designation} ${numeroDisplay}
+                        <span class="text-xs text-[var(--text-muted)] block">(${numberFormat(p.stock_disponible, 3)} ${ut} dispo)</span>
+                    </div>`;
+                }).join('');
             }
+            suggestions.classList.add('show');
+        }
+
+        function selectProduit(stockId, designation, stock, prix, unite, numeroRideau) {
+            document.getElementById('produitSearch').value = designation + (numeroRideau ? ' (🔖 ' + numeroRideau + ')' : '');
+            document.getElementById('stockHidden').value = stockId;
+            document.getElementById('produitSuggestions').classList.remove('show');
+            
+            const ut = unite === 'metres' ? 'mètres' : 'pièces';
+            document.getElementById('infoDesignation').textContent = designation;
+            if (document.getElementById('infoNumeroRideau')) {
+                document.getElementById('infoNumeroRideau').textContent = numeroRideau || 'Aucun';
+            }
+            document.getElementById('infoStock').textContent = numberFormat(stock, 3) + ' ' + ut;
+            document.getElementById('infoPrix').textContent = numberFormat(prix, 2);
+            document.getElementById('produitInfo').classList.remove('hidden');
+            
+            document.getElementById('prixInput').value = numberFormat(prix, 2);
+            document.getElementById('uniteLabel').textContent = ut;
+            document.getElementById('maxQte').textContent = numberFormat(stock, 3);
+            document.getElementById('qteInput').step = 0.001;
+            document.getElementById('qteInput').min = 0.001;
+            document.getElementById('qteInput').value = '';
+            document.getElementById('qteInput').max = stock;
         }
 
         function setMax() {
-            const sel = document.getElementById('stockSelect');
-            const opt = sel.options[sel.selectedIndex];
-            if (opt && opt.value) {
-                const v = parseFloat(opt.dataset.stock);
-                document.getElementById('qteInput').value = opt.dataset.unite === 'pieces' ? Math.floor(v) : v;
+            const stockId = document.getElementById('stockHidden').value;
+            if (!stockId) return;
+            const produit = produitsDisponibles.find(p => p.stock_id == stockId);
+            if (produit) {
+                document.getElementById('qteInput').value = produit.stock_disponible;
             }
         }
+
+        function numberFormat(number, decimals) {
+            return parseFloat(number).toFixed(decimals);
+        }
+
+        // Fermer les suggestions au clic ailleurs
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.produit-search-wrapper');
+            if (wrapper && !wrapper.contains(e.target)) {
+                document.getElementById('produitSuggestions').classList.remove('show');
+            }
+        });
 
         // Escape
         document.addEventListener('keydown', e => {

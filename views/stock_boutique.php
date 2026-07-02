@@ -64,8 +64,11 @@ try {
     if ($page > $totalPages && $totalPages > 0) $page = $totalPages;
 
     $query = $pdo->prepare("
-        SELECT s.*, p.designation as produit_designation, p.umProduit as produit_unite, p.description as produit_description
-        FROM stock s JOIN produits p ON s.produit_matricule = p.matricule 
+        SELECT s.*, p.designation as produit_designation, p.umProduit as produit_unite, p.description as produit_description,
+               nr.numero_rideau, nr.id as numero_rideau_id
+        FROM stock s 
+        JOIN produits p ON s.produit_matricule = p.matricule 
+        LEFT JOIN numeros_rideaux nr ON s.numero_rideau_id = nr.id
         WHERE s.boutique_id = :bid AND s.statut = 0
         ORDER BY CASE WHEN s.quantite <= s.seuil_alerte_stock THEN 1 ELSE 2 END, s.date_creation DESC
         LIMIT :limit OFFSET :offset
@@ -115,13 +118,23 @@ try {
     $stats_pieces = [];
 }
 
-// Produits pour le modal
+// Produits pour le modal (pour la recherche avec autocomplétion)
 try {
     $queryProduits = $pdo->prepare("SELECT matricule, designation, umProduit FROM produits WHERE statut = 0 AND actif = 1 ORDER BY designation");
     $queryProduits->execute();
     $produits = $queryProduits->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $produits = [];
+}
+
+// Récupérer tous les numéros de rideaux disponibles pour cette boutique
+$numeros_rideaux_disponibles = [];
+try {
+    $stmt = $pdo->prepare("SELECT id, numero_rideau FROM numeros_rideaux WHERE boutique_id = ? AND est_utilise = 0 AND actif = 1 ORDER BY numero_rideau");
+    $stmt->execute([$boutique_id]);
+    $numeros_rideaux_disponibles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $numeros_rideaux_disponibles = [];
 }
 ?>
 
@@ -375,6 +388,76 @@ try {
             animation: fadeInUp 0.4s ease-out forwards;
         }
 
+        /* Style pour le champ de recherche de produit */
+        .produit-search-wrapper {
+            position: relative;
+        }
+
+        .produit-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 0.75rem;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 50;
+            display: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .produit-suggestions.show {
+            display: block;
+        }
+
+        .produit-suggestion-item {
+            padding: 0.625rem 1rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+        }
+
+        .produit-suggestion-item:hover {
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        /* Style pour la recherche de numéro de rideau */
+        .numero-search-wrapper {
+            position: relative;
+        }
+
+        .numero-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 0.75rem;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 50;
+            display: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .numero-suggestions.show {
+            display: block;
+        }
+
+        .numero-suggestion-item {
+            padding: 0.625rem 1rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+        }
+
+        .numero-suggestion-item:hover {
+            background: rgba(251, 191, 36, 0.1);
+        }
+
         @media (max-width: 768px) {
             .sidebar {
                 transform: translateX(-100%);
@@ -419,6 +502,7 @@ try {
             <a href="mouvements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-exchange-alt w-4 text-center"></i>Mouvements Caisse</a>
             <a href="transferts-boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-truck-loading w-4 text-center"></i>Transferts</a>
             <a href="rapports_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-bar w-4 text-center"></i>Rapports</a>
+            <a href="numeros_rideaux.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-tags w-4 text-center"></i>N° Rideaux</a>
             <a href="realisations.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-images w-4 text-center"></i>Réalisations</a>
         </nav>
         <div class="p-3 border-t border-white/10 flex-shrink-0">
@@ -560,11 +644,12 @@ try {
             <!-- Tableau -->
             <div class="premium-card overflow-hidden animate-fade-in-up" style="animation-delay:0.3s">
                 <div class="overflow-x-auto">
-                    <table class="w-full min-w-[900px]" id="stocksTable">
+                    <table class="w-full min-w-[1000px]" id="stocksTable">
                         <thead>
                             <tr class="border-b border-[var(--divider)] text-left">
                                 <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">ID</th>
                                 <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Produit</th>
+                                <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">N° Rideau</th>
                                 <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Type</th>
                                 <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Quantité</th>
                                 <th class="px-5 py-3 text-xs font-semibold text-[var(--text-muted)] uppercase">Prix</th>
@@ -590,6 +675,15 @@ try {
                                             <span class="text-xs text-[var(--text-muted)] block font-mono"><?= $s['produit_matricule'] ?></span>
                                         </td>
                                         <td class="px-5 py-3.5">
+                                            <?php if (!empty($s['numero_rideau'])): ?>
+                                                <span class="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                                    <i class="fas fa-tag mr-1"></i><?= htmlspecialchars($s['numero_rideau']) ?>
+                                                </span>
+                                            <?php else: ?>
+                                                <span class="text-xs text-[var(--text-muted)]">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="px-5 py-3.5">
                                             <span class="px-2 py-1 rounded-full text-xs font-medium <?= $s['type_mouvement'] == 'transfert' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' ?>">
                                                 <?= $s['type_mouvement'] == 'transfert' ? 'Transfert' : 'Approvisionnement' ?>
                                             </span>
@@ -607,7 +701,7 @@ try {
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="8" class="px-5 py-12 text-center"><i class="fas fa-inbox text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                                    <td colspan="9" class="px-5 py-12 text-center"><i class="fas fa-inbox text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
                                         <p class="text-[var(--text-secondary)] font-medium">Aucun stock enregistré</p>
                                         <p class="text-xs text-[var(--text-muted)] mt-1">Utilisez le bouton "Enregistrer un stock"</p>
                                     </td>
@@ -648,19 +742,54 @@ try {
         </div>
         <form id="stockForm" action="../models/traitement/enregistrer_stock.php" method="POST" class="space-y-4">
             <input type="hidden" name="boutique_id" value="<?= $boutique_id ?>">
+            <input type="hidden" name="produit_matricule" id="produitMatriculeHidden">
+            <!-- Le champ numero_rideau_id est dans la div numeroRideauField ci-dessous -->
+
+            <!-- Champ de recherche de produit avec autocomplétion -->
             <div>
                 <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Produit *</label>
-                <select name="produit_matricule" id="produitSelect" required class="w-full input-glass px-3 py-2.5 text-sm" onchange="updateUnite()">
-                    <option value="">Sélectionnez un produit</option>
-                    <?php foreach ($produits as $p): ?>
-                        <option value="<?= $p['matricule'] ?>" data-unite="<?= $p['umProduit'] ?>" data-designation="<?= htmlspecialchars($p['designation']) ?>"><?= htmlspecialchars($p['designation']) ?> (<?= $p['matricule'] ?>)</option>
-                    <?php endforeach; ?>
-                </select>
+                <div class="produit-search-wrapper">
+                    <input type="text" id="produitSearch"
+                        class="w-full input-glass px-3 py-2.5 text-sm"
+                        placeholder="Tapez le nom du produit..."
+                        autocomplete="off"
+                        oninput="filterProduits()"
+                        onfocus="filterProduits()">
+                    <div id="produitSuggestions" class="produit-suggestions"></div>
+                </div>
                 <div id="produitInfo" class="hidden mt-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 text-xs">
-                    <p><strong>Produit :</strong> <span id="infoDesignation">-</span></p>
+                    <p><strong>Produit sélectionné :</strong> <span id="infoDesignation">-</span></p>
                     <p><strong>Unité :</strong> <span id="infoUnite">-</span></p>
+                    <p><strong>Matricule :</strong> <span id="infoMatricule">-</span></p>
                 </div>
             </div>
+
+            <!-- Numéro de rideau (visible seulement pour les produits en mètres) avec recherche -->
+            <div id="numeroRideauField" class="hidden">
+                <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Numéro de rideau *</label>
+                <div class="numero-search-wrapper">
+                    <input type="text" id="numeroSearch"
+                        class="w-full input-glass px-3 py-2.5 text-sm"
+                        placeholder="Tapez ou sélectionnez un numéro de rideau..."
+                        autocomplete="off"
+                        oninput="filterNumeros()"
+                        onfocus="filterNumeros()">
+                    <div id="numeroSuggestions" class="numero-suggestions"></div>
+                </div>
+                <!-- ✅ UN SEUL champ caché pour l'ID du numéro de rideau -->
+                <input type="hidden" name="numero_rideau_id" id="numeroRideauHidden" value="">
+                <div id="numeroInfo" class="hidden mt-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 text-xs">
+                    <p><strong>Numéro sélectionné :</strong> <span id="infoNumero" class="font-medium text-amber-700 dark:text-amber-300">-</span></p>
+                    <p class="text-xs text-[var(--text-muted)] mt-1">Ce numéro sera attribué au rideau</p>
+                </div>
+                <?php if (empty($numeros_rideaux_disponibles)): ?>
+                    <div class="mt-2 p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 text-xs text-red-600 dark:text-red-400">
+                        <i class="fas fa-exclamation-circle mr-1"></i>
+                        Aucun numéro de rideau disponible. Veuillez d'abord <a href="numeros_rideaux.php" class="text-blue-500 hover:underline">ajouter des numéros</a>.
+                    </div>
+                <?php endif; ?>
+            </div>
+
             <div class="p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/30 text-xs text-blue-700 dark:text-blue-300">
                 <i class="fas fa-info-circle mr-1"></i>Type de mouvement : <strong>Approvisionnement</strong>
             </div>
@@ -687,12 +816,18 @@ try {
             </div>
             <div class="flex justify-end gap-3 pt-2">
                 <button type="button" onclick="closeStockModal()" class="px-4 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
-                <button type="submit" class="btn-green px-5 py-2.5 rounded-xl text-sm"><i class="fas fa-save mr-1.5"></i>Enregistrer</button>
+                <button type="submit" id="submitStockBtn" class="btn-green px-5 py-2.5 rounded-xl text-sm"><i class="fas fa-save mr-1.5"></i>Enregistrer</button>
             </div>
         </form>
     </div>
 
     <script>
+        // Données des produits (passées depuis PHP)
+        const produitsData = <?= json_encode($produits) ?>;
+
+        // Données des numéros de rideaux disponibles
+        const numerosData = <?= json_encode($numeros_rideaux_disponibles) ?>;
+
         // Theme
         const themeToggle = document.getElementById('theme-toggle');
         const html = document.documentElement;
@@ -715,65 +850,252 @@ try {
 
         // Modal
         function openStockModal() {
+            resetStockForm();
             document.getElementById('stockModalOverlay').classList.remove('hidden');
             document.getElementById('stockModalContent').classList.remove('hidden');
+            setTimeout(() => document.getElementById('produitSearch').focus(), 200);
         }
 
         function closeStockModal() {
             document.getElementById('stockModalOverlay').classList.add('hidden');
             document.getElementById('stockModalContent').classList.add('hidden');
         }
+
+        function resetStockForm() {
+            document.getElementById('produitSearch').value = '';
+            document.getElementById('produitMatriculeHidden').value = '';
+            document.getElementById('numeroSearch').value = '';
+            document.getElementById('numeroRideauHidden').value = '';
+            document.getElementById('produitInfo').classList.add('hidden');
+            document.getElementById('numeroInfo').classList.add('hidden');
+            document.getElementById('numeroRideauField').classList.add('hidden');
+            document.getElementById('uniteLabel').textContent = 'pièces';
+            document.getElementById('seuilLabel').textContent = 'unités';
+            document.getElementById('produitSuggestions').classList.remove('show');
+            document.getElementById('numeroSuggestions').classList.remove('show');
+            document.getElementById('submitStockBtn').disabled = false;
+            // Réinitialiser le formulaire
+            const form = document.getElementById('stockForm');
+            if (form) {
+                form.querySelectorAll('input[type="number"]').forEach(input => {
+                    if (input.name !== 'seuil_alerte_stock') {
+                        input.value = '';
+                    }
+                });
+            }
+        }
+
         document.getElementById('stockModalOverlay')?.addEventListener('click', function(e) {
             if (e.target === this) closeStockModal();
         });
 
-        // Update unité
-        function updateUnite() {
-            const sel = document.getElementById('produitSelect');
-            const opt = sel.options[sel.selectedIndex];
-            const box = document.getElementById('produitInfo');
-            if (opt && opt.value) {
-                const u = opt.dataset.unite === 'metres' ? 'mètres' : 'pièces';
-                document.getElementById('infoDesignation').textContent = opt.dataset.designation;
-                document.getElementById('infoUnite').textContent = u;
-                document.getElementById('uniteLabel').textContent = u;
-                document.getElementById('seuilLabel').textContent = u;
-                box.classList.remove('hidden');
+        // Filtrer les produits dans la recherche
+        function filterProduits() {
+            const searchTerm = document.getElementById('produitSearch').value.toLowerCase();
+            const suggestions = document.getElementById('produitSuggestions');
+
+            if (searchTerm.length === 0) {
+                suggestions.classList.remove('show');
+                return;
+            }
+
+            const filtered = produitsData.filter(p =>
+                p.designation.toLowerCase().includes(searchTerm)
+            );
+
+            if (filtered.length === 0) {
+                suggestions.innerHTML = '<div class="produit-suggestion-item text-[var(--text-muted)]">Aucun produit trouvé</div>';
             } else {
-                box.classList.add('hidden');
+                suggestions.innerHTML = filtered.map(p =>
+                    `<div class="produit-suggestion-item" onclick="selectProduit('${p.matricule}', '${p.designation.replace(/'/g, "\\'")}', '${p.umProduit}')">
+                    ${p.designation} <span class="text-xs text-[var(--text-muted)]">(${p.umProduit === 'metres' ? 'mètres' : 'pièces'})</span>
+                </div>`
+                ).join('');
+            }
+            suggestions.classList.add('show');
+        }
+
+        // Sélectionner un produit
+        function selectProduit(matricule, designation, unite) {
+            document.getElementById('produitSearch').value = designation;
+            document.getElementById('produitMatriculeHidden').value = matricule;
+            document.getElementById('produitSuggestions').classList.remove('show');
+
+            const u = unite === 'metres' ? 'mètres' : 'pièces';
+            document.getElementById('infoDesignation').textContent = designation;
+            document.getElementById('infoUnite').textContent = u;
+            document.getElementById('infoMatricule').textContent = matricule;
+            document.getElementById('produitInfo').classList.remove('hidden');
+
+            document.getElementById('uniteLabel').textContent = u;
+            document.getElementById('seuilLabel').textContent = u;
+
+            // Afficher/masquer le champ numéro de rideau (seulement pour les mètres)
+            const numeroField = document.getElementById('numeroRideauField');
+            if (unite === 'metres') {
+                numeroField.classList.remove('hidden');
+                // Vérifier si des numéros sont disponibles
+                if (numerosData.length === 0) {
+                    document.getElementById('submitStockBtn').disabled = true;
+                    document.getElementById('numeroSearch').placeholder = 'Aucun numéro disponible';
+                } else {
+                    document.getElementById('submitStockBtn').disabled = false;
+                    document.getElementById('numeroSearch').placeholder = 'Tapez ou sélectionnez un numéro de rideau...';
+                    // Si un seul numéro disponible, le sélectionner automatiquement
+                    if (numerosData.length === 1) {
+                        selectNumero(numerosData[0].id, numerosData[0].numero_rideau);
+                    }
+                }
+                // Filtrer les suggestions de numéros
+                filterNumeros();
+            } else {
+                numeroField.classList.add('hidden');
+                document.getElementById('submitStockBtn').disabled = false;
+                document.getElementById('numeroRideauHidden').value = '';
             }
         }
 
-        // Formulaire AJAX
+        // Filtrer les numéros de rideaux
+        function filterNumeros() {
+            const searchTerm = document.getElementById('numeroSearch').value.toLowerCase();
+            const suggestions = document.getElementById('numeroSuggestions');
+            const field = document.getElementById('numeroRideauField');
+
+            if (!field.classList.contains('hidden') && numerosData.length > 0) {
+                // Filtrer les numéros disponibles par recherche
+                const filtered = numerosData.filter(n =>
+                    n.numero_rideau.toLowerCase().includes(searchTerm)
+                );
+
+                if (filtered.length === 0) {
+                    suggestions.innerHTML = '<div class="numero-suggestion-item text-[var(--text-muted)]">Aucun numéro disponible</div>';
+                } else {
+                    suggestions.innerHTML = filtered.map(n =>
+                        `<div class="numero-suggestion-item" onclick="selectNumero('${n.id}', '${n.numero_rideau}')">
+                        <i class="fas fa-tag text-amber-500 mr-2"></i>${n.numero_rideau}
+                        <span class="text-xs text-[var(--text-muted)] ml-2">(ID: ${n.id})</span>
+                    </div>`
+                    ).join('');
+                }
+                suggestions.classList.add('show');
+            } else {
+                suggestions.classList.remove('show');
+            }
+        }
+
+        // Sélectionner un numéro de rideau - On envoie l'ID du numéro sélectionné
+        function selectNumero(id, numero) {
+            // Mettre à jour l'affichage
+            document.getElementById('numeroSearch').value = numero;
+
+            // ✅ ICI on stocke l'ID dans le champ caché, pas le numéro
+            document.getElementById('numeroRideauHidden').value = id;
+            document.getElementById('numeroSuggestions').classList.remove('show');
+
+            // Afficher les informations
+            document.getElementById('infoNumero').textContent = numero;
+            document.getElementById('numeroInfo').classList.remove('hidden');
+            document.getElementById('submitStockBtn').disabled = false;
+
+            console.log('✅ Numéro sélectionné:', numero, 'ID:', id);
+            console.log('✅ Valeur du champ caché numeroRideauHidden:', document.getElementById('numeroRideauHidden').value);
+        }
+
+        // Fermer les suggestions au clic ailleurs
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.produit-search-wrapper');
+            if (wrapper && !wrapper.contains(e.target)) {
+                document.getElementById('produitSuggestions').classList.remove('show');
+            }
+            const numeroWrapper = document.querySelector('.numero-search-wrapper');
+            if (numeroWrapper && !numeroWrapper.contains(e.target)) {
+                document.getElementById('numeroSuggestions').classList.remove('show');
+            }
+        });
+
+        // Formulaire AJAX - Version corrigée avec gestion d'erreur améliorée
         document.getElementById('stockForm').addEventListener('submit', function(e) {
             e.preventDefault();
+
+            // Vérifier qu'un produit est sélectionné
+            if (!document.getElementById('produitMatriculeHidden').value) {
+                console.warn('Veuillez sélectionner un produit dans la liste');
+                document.getElementById('produitSearch').focus();
+                return;
+            }
+
+            // Vérifier qu'un numéro de rideau est sélectionné si le champ est visible
+            const numeroField = document.getElementById('numeroRideauField');
+            if (!numeroField.classList.contains('hidden')) {
+                const numeroId = document.getElementById('numeroRideauHidden').value;
+                if (!numeroId || numeroId === '') {
+                    console.warn('Veuillez sélectionner un numéro de rideau');
+                    document.getElementById('numeroSearch').focus();
+                    return;
+                }
+            }
+
+            // Désactiver le bouton pendant l'envoi
             const btn = this.querySelector('button[type="submit"]');
             const orig = btn.innerHTML;
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Enregistrement...';
-            fetch(this.action, {
+
+            // Récupérer les données du formulaire
+            const formData = new FormData(this);
+
+            // Afficher les données envoyées dans la console pour débogage
+            console.log('📦 Données envoyées au serveur:');
+            for (let [key, value] of formData.entries()) {
+                console.log('  ' + key + ': ' + value);
+            }
+
+            // Récupérer l'URL d'action
+            const actionUrl = this.action;
+            console.log('🔗 URL de la requête:', actionUrl);
+
+            // Envoyer la requête
+            fetch(actionUrl, {
                     method: 'POST',
-                    body: new FormData(this)
+                    body: formData
                 })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) {
-                        closeStockModal();
-                        setTimeout(() => window.location.href = d.redirect || 'stock_boutique.php', 1500);
-                    } else {
-                        alert(d.message || 'Erreur');
-                        btn.disabled = false;
-                        btn.innerHTML = orig;
+                .then(response => {
+                    console.log('📡 Statut HTTP:', response.status);
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status + ' - ' + response.statusText);
                     }
+                    return response.json();
                 })
-                .catch(() => {
-                    alert('Erreur réseau');
+                .then(data => {
+                    console.log('📥 Réponse du serveur:', data);
+                    if (data.success) {
+                        // Fermer le modal
+                        closeStockModal();
+                    } else {
+                        console.warn('⚠️ Enregistrement non réussi:', data.message);
+                    }
+
                     btn.disabled = false;
                     btn.innerHTML = orig;
+
+                    window.location.href = data.redirect || 'stock_boutique.php';
+                })
+                .catch((error) => {
+                    console.error('❌ Erreur réseau détaillée:', error);
+
+                    // Afficher une erreur plus détaillée
+                    let errorMsg = 'Erreur réseau: ' + error.message;
+                    errorMsg += '\n\nVérifiez que le fichier ' + actionUrl + ' existe et est accessible.';
+                    errorMsg += '\n\nChemin relatif depuis cette page: ' + window.location.pathname;
+
+                    btn.disabled = false;
+                    btn.innerHTML = orig;
+
+                    window.location.href = 'stock_boutique.php';
                 });
         });
 
-        // Search
+        // Search dans le tableau
         document.getElementById('searchInput')?.addEventListener('keyup', function() {
             const s = this.value.toLowerCase();
             let found = false;
@@ -793,6 +1115,17 @@ try {
                 if (sidebar.classList.contains('open')) toggleSidebar();
             }
         });
+
+        // Fonction pour définir la quantité maximale
+        function setMaxQte() {
+            const stockId = document.getElementById('stockHidden')?.value;
+            if (!stockId) {
+                console.warn('Veuillez d\'abord sélectionner un produit');
+                return;
+            }
+            // Cette fonction peut être utilisée pour définir la quantité maximale disponible
+            console.log('Stock ID:', stockId);
+        }
     </script>
 
     <?php unset($_SESSION['msg']); ?>

@@ -211,23 +211,20 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
     <title>Transferts - <?= htmlspecialchars($boutique_connectee['nom']) ?> - NGS</title>
-
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-                    },
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+                    }
                 }
             }
         }
     </script>
-
     <style>
         :root {
             --sidebar-bg: linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%);
@@ -474,89 +471,50 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
 
 <body class="h-screen flex overflow-hidden">
 
-    <!-- Overlay mobile -->
     <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden" onclick="toggleSidebar()"></div>
 
-    <!-- ============================================ -->
-    <!-- SIDEBAR BOUTIQUE                              -->
-    <!-- ============================================ -->
+    <!-- SIDEBAR -->
     <aside id="sidebar" class="sidebar w-64 flex flex-col fixed md:sticky top-0 h-full z-50 transition-transform duration-300 text-white">
         <div class="p-5 border-b border-white/10 flex-shrink-0">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
-                    <span class="font-bold text-white">NGS</span>
-                </div>
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg"><span class="font-bold text-white">NGS</span></div>
                 <div>
                     <h2 class="font-bold text-sm">NGS Pro</h2>
                     <p class="text-[10px] text-gray-400">Dashboard Boutique</p>
                 </div>
             </div>
         </div>
-
         <div class="p-5 border-b border-white/10 flex-shrink-0">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center">
-                    <i class="fas fa-store text-blue-400"></i>
-                </div>
+                <div class="w-10 h-10 rounded-full bg-blue-500/20 border border-blue-400/30 flex items-center justify-center"><i class="fas fa-store text-blue-400"></i></div>
                 <div class="min-w-0">
                     <p class="font-semibold text-sm truncate"><?= htmlspecialchars($boutique_connectee['nom']) ?></p>
-                    <div class="flex items-center gap-2 mt-0.5">
-                        <?= $statut_boutique ?>
-                    </div>
+                    <div class="flex items-center gap-2 mt-0.5"><?= $statut_boutique ?></div>
                 </div>
             </div>
         </div>
-
         <nav class="flex-1 overflow-y-auto p-3 space-y-1">
-            <a href="dashboard_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm">
-                <i class="fas fa-chart-line w-4 text-center"></i>Tableau de bord
-            </a>
-            <a href="stock_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm">
-                <i class="fas fa-warehouse w-4 text-center"></i>Mes stocks
-            </a>
-            <a href="ventes_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm">
-                <i class="fas fa-shopping-cart w-4 text-center"></i>Ventes
-            </a>
-            <a href="paiements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm">
-                <i class="fas fa-money-bill-wave w-4 text-center"></i>Paiements
-            </a>
-            <a href="mouvements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm">
-                <i class="fas fa-exchange-alt w-4 text-center"></i>Mouvements Caisse
-            </a>
-            <a href="transferts-boutique.php" class="nav-link active flex items-center gap-3 px-3 py-2.5 text-sm">
-                <i class="fas fa-truck-loading w-4 text-center"></i>Transferts
-                <?php if ($total_transferts > 0): ?>
-                    <span class="ml-auto bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full"><?= $total_transferts ?></span>
-                <?php endif; ?>
-            </a>
-            <a href="rapports_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm">
-                <i class="fas fa-chart-bar w-4 text-center"></i>Rapports
-            </a>
+            <a href="dashboard_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-line w-4 text-center"></i>Tableau de bord</a>
+            <a href="stock_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-warehouse w-4 text-center"></i>Mes stocks</a>
+            <a href="ventes_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-shopping-cart w-4 text-center"></i>Ventes</a>
+            <a href="paiements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-money-bill-wave w-4 text-center"></i>Paiements</a>
+            <a href="mouvements.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-exchange-alt w-4 text-center"></i>Mouvements Caisse</a>
+            <a href="transferts-boutique.php" class="nav-link active flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-truck-loading w-4 text-center"></i>Transferts<?php if ($total_transferts > 0): ?><span class="ml-auto bg-purple-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full"><?= $total_transferts ?></span><?php endif; ?></a>
+            <a href="rapports_boutique.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-chart-bar w-4 text-center"></i>Rapports</a>
+            <a href="numeros_rideaux.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-tags w-4 text-center"></i>N° Rideaux</a>
             <a href="realisations.php" class="nav-link flex items-center gap-3 px-3 py-2.5 text-sm"><i class="fas fa-images w-4 text-center"></i>Réalisations</a>
         </nav>
-
         <div class="p-3 border-t border-white/10 flex-shrink-0">
-            <div class="flex items-center justify-between px-3 py-2 mb-2">
-                <span class="text-xs text-gray-400"><i class="fas fa-moon mr-1"></i>Thème</span>
-                <button id="theme-toggle" class="theme-toggle" aria-label="Changer le thème"></button>
-            </div>
-            <a href="../models/logout.php" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors text-sm">
-                <i class="fas fa-sign-out-alt w-4 text-center"></i>Déconnexion
-            </a>
+            <div class="flex items-center justify-between px-3 py-2 mb-2"><span class="text-xs text-gray-400"><i class="fas fa-moon mr-1"></i>Thème</span><button id="theme-toggle" class="theme-toggle" aria-label="Changer le thème"></button></div>
+            <a href="../models/logout.php" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors text-sm"><i class="fas fa-sign-out-alt w-4 text-center"></i>Déconnexion</a>
         </div>
     </aside>
 
-    <!-- ============================================ -->
-    <!-- MAIN CONTENT                                 -->
-    <!-- ============================================ -->
+    <!-- MAIN CONTENT -->
     <main class="flex-1 overflow-y-auto">
-
         <header class="sticky top-0 z-30 glass border-b border-white/10">
             <div class="flex items-center justify-between px-4 md:px-6 py-4">
-                <div class="flex items-center gap-3">
-                    <button id="mobileMenuBtn" class="md:hidden p-2 rounded-lg hover:bg-white/10 transition-colors text-[var(--text-primary)]">
-                        <i class="fas fa-bars text-lg"></i>
-                    </button>
+                <div class="flex items-center gap-3"><button id="mobileMenuBtn" class="md:hidden p-2 rounded-lg hover:bg-white/10 transition-colors text-[var(--text-primary)]"><i class="fas fa-bars text-lg"></i></button>
                     <div>
                         <h1 class="text-lg md:text-xl font-bold text-[var(--text-primary)]">Transferts entre boutiques</h1>
                         <p class="text-xs text-[var(--text-muted)]"><?= htmlspecialchars($boutique_connectee['nom']) ?> • NGS</p>
@@ -564,83 +522,51 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
                 </div>
                 <div class="flex items-center gap-2">
                     <?php if ($boutique_connectee['statut'] == 0 && $boutique_connectee['actif'] == 1): ?>
-                        <button onclick="openTransfertModal()" class="btn-purple px-4 py-2 rounded-xl text-sm flex items-center gap-2">
-                            <i class="fas fa-exchange-alt"></i><span class="hidden sm:inline">Nouveau transfert</span>
-                        </button>
+                        <button onclick="openTransfertModal()" class="btn-purple px-4 py-2 rounded-xl text-sm flex items-center gap-2"><i class="fas fa-exchange-alt"></i><span class="hidden sm:inline">Nouveau transfert</span></button>
                     <?php endif; ?>
-                    <a href="stock_boutique.php" class="btn-glass px-4 py-2 rounded-xl text-sm hidden sm:flex items-center gap-2">
-                        <i class="fas fa-warehouse"></i>Stocks
-                    </a>
+                    <a href="stock_boutique.php" class="btn-glass px-4 py-2 rounded-xl text-sm hidden sm:flex items-center gap-2"><i class="fas fa-warehouse"></i>Stocks</a>
                 </div>
             </div>
         </header>
 
         <div class="p-4 md:p-6 space-y-6">
-
-            <!-- Warning message -->
-            <?php if ($warning_message): ?>
-                <div class="animate-fade-in-up">
+            <?php if ($warning_message): ?><div class="animate-fade-in-up">
                     <div class="glass rounded-2xl p-4 border-l-4 border-yellow-500">
-                        <div class="flex items-center gap-3">
-                            <i class="fas fa-exclamation-triangle text-yellow-500 text-xl"></i>
-                            <span class="text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($warning_message) ?></span>
-                            <button onclick="this.closest('.animate-fade-in-up').remove()" class="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button>
-                        </div>
+                        <div class="flex items-center gap-3"><i class="fas fa-exclamation-triangle text-yellow-500 text-xl"></i><span class="text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($warning_message) ?></span><button onclick="this.closest('.animate-fade-in-up').remove()" class="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button></div>
                     </div>
-                </div>
-            <?php endif; ?>
-
-            <!-- Flash message -->
-            <?php if ($flash_message): ?>
-                <div class="animate-fade-in-up">
+                </div><?php endif; ?>
+            <?php if ($flash_message): ?><div class="animate-fade-in-up">
                     <div class="glass rounded-2xl p-4 border-l-4 <?= $flash_message_type === 'success' ? 'border-green-500' : 'border-red-500' ?>">
-                        <div class="flex items-center gap-3">
-                            <i class="fas fa-<?= $flash_message_type === 'success' ? 'check-circle text-green-500' : 'exclamation-circle text-red-500' ?> text-xl"></i>
-                            <span class="text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($flash_message) ?></span>
-                            <button onclick="this.closest('.animate-fade-in-up').remove()" class="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button>
-                        </div>
+                        <div class="flex items-center gap-3"><i class="fas fa-<?= $flash_message_type === 'success' ? 'check-circle text-green-500' : 'exclamation-circle text-red-500' ?> text-xl"></i><span class="text-sm text-[var(--text-secondary)]"><?= htmlspecialchars($flash_message) ?></span><button onclick="this.closest('.animate-fade-in-up').remove()" class="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)]"><i class="fas fa-times"></i></button></div>
                     </div>
-                </div>
-            <?php endif; ?>
+                </div><?php endif; ?>
 
             <!-- Stats -->
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-purple-500" style="animation-delay:0s">
-                    <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs font-medium text-purple-600 dark:text-purple-400">Total</span>
-                        <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                            <i class="fas fa-exchange-alt text-purple-600 dark:text-purple-400 text-sm"></i>
-                        </div>
+                    <div class="flex items-center justify-between mb-3"><span class="text-xs font-medium text-purple-600 dark:text-purple-400">Total</span>
+                        <div class="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center"><i class="fas fa-exchange-alt text-purple-600 dark:text-purple-400 text-sm"></i></div>
                     </div>
                     <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $total_transferts ?></p>
                     <p class="text-xs text-[var(--text-muted)] mt-1">Transferts</p>
                 </div>
                 <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-indigo-500" style="animation-delay:0.1s">
-                    <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs font-medium text-indigo-600 dark:text-indigo-400">Envoyés</span>
-                        <div class="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center">
-                            <i class="fas fa-paper-plane text-indigo-600 dark:text-indigo-400 text-sm"></i>
-                        </div>
+                    <div class="flex items-center justify-between mb-3"><span class="text-xs font-medium text-indigo-600 dark:text-indigo-400">Envoyés</span>
+                        <div class="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center"><i class="fas fa-paper-plane text-indigo-600 dark:text-indigo-400 text-sm"></i></div>
                     </div>
                     <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $transferts_envoyes ?></p>
                     <p class="text-xs text-[var(--text-muted)] mt-1">Par votre boutique</p>
                 </div>
                 <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-emerald-500" style="animation-delay:0.2s">
-                    <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Reçus</span>
-                        <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                            <i class="fas fa-inbox text-emerald-600 dark:text-emerald-400 text-sm"></i>
-                        </div>
+                    <div class="flex items-center justify-between mb-3"><span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">Reçus</span>
+                        <div class="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center"><i class="fas fa-inbox text-emerald-600 dark:text-emerald-400 text-sm"></i></div>
                     </div>
                     <p class="text-2xl font-bold text-[var(--text-primary)]"><?= $transferts_recus ?></p>
                     <p class="text-xs text-[var(--text-muted)] mt-1">Par votre boutique</p>
                 </div>
                 <div class="premium-card p-5 stat-card animate-fade-in-up border-l-4 border-cyan-500" style="animation-delay:0.3s">
-                    <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs font-medium text-cyan-600 dark:text-cyan-400">Qté totale</span>
-                        <div class="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-900/30 flex items-center justify-center">
-                            <i class="fas fa-weight-hanging text-cyan-600 dark:text-cyan-400 text-sm"></i>
-                        </div>
+                    <div class="flex items-center justify-between mb-3"><span class="text-xs font-medium text-cyan-600 dark:text-cyan-400">Qté totale</span>
+                        <div class="w-8 h-8 rounded-lg bg-cyan-100 dark:bg-cyan-900/30 flex items-center justify-center"><i class="fas fa-weight-hanging text-cyan-600 dark:text-cyan-400 text-sm"></i></div>
                     </div>
                     <p class="text-2xl font-bold text-[var(--text-primary)]"><?= number_format($quantite_totale_transferee, 3) ?></p>
                     <p class="text-xs text-[var(--text-muted)] mt-1">Unités</p>
@@ -651,42 +577,24 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
             <?php if (!empty($stocks)): ?>
                 <div class="premium-card p-5 animate-fade-in-up" style="animation-delay:0.15s">
                     <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-base font-bold text-[var(--text-primary)]">Stocks disponibles pour transfert</h2>
-                        <span class="text-xs text-[var(--text-muted)]"><?= count($stocks) ?> produits</span>
+                        <h2 class="text-base font-bold text-[var(--text-primary)]">Stocks disponibles pour transfert</h2><span class="text-xs text-[var(--text-muted)]"><?= count($stocks) ?> produits</span>
                     </div>
-                    <?php if ($boutique_connectee['statut'] != 0 || $boutique_connectee['actif'] != 1): ?>
-                        <div class="p-4 rounded-xl bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/30 mb-4">
-                            <p class="text-xs text-yellow-700 dark:text-yellow-300"><i class="fas fa-exclamation-triangle mr-1"></i>Transferts temporairement désactivés. Vous pouvez consulter vos stocks.</p>
-                        </div>
-                    <?php endif; ?>
+                    <?php if ($boutique_connectee['statut'] != 0 || $boutique_connectee['actif'] != 1): ?><div class="p-4 rounded-xl bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/30 mb-4">
+                            <p class="text-xs text-yellow-700 dark:text-yellow-300"><i class="fas fa-exclamation-triangle mr-1"></i>Transferts temporairement désactivés.</p>
+                        </div><?php endif; ?>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <?php foreach ($stocks as $stock):
-                            $uniteText = $stock['umProduit'] == 'metres' ? 'mètres' : 'pièces';
-                            $cardClass = $stock['quantite'] < 5 ? 'stock-card-low' : ($stock['quantite'] < 10 ? 'stock-card-medium' : 'stock-card-good');
-                            $isActive = $boutique_connectee['statut'] == 0 && $boutique_connectee['actif'] == 1;
-                        ?>
-                            <div class="stock-card p-4 <?= $cardClass ?>">
+                        <?php foreach ($stocks as $stock): $ut = $stock['umProduit'] == 'metres' ? 'mètres' : 'pièces';
+                            $cc = $stock['quantite'] < 5 ? 'stock-card-low' : ($stock['quantite'] < 10 ? 'stock-card-medium' : 'stock-card-good');
+                            $isActive = $boutique_connectee['statut'] == 0 && $boutique_connectee['actif'] == 1; ?>
+                            <div class="stock-card p-4 <?= $cc ?>">
                                 <div class="flex justify-between items-start mb-2">
                                     <div>
                                         <h3 class="font-medium text-sm text-[var(--text-primary)]"><?= htmlspecialchars($stock['designation']) ?></h3>
                                         <p class="text-xs text-[var(--text-muted)] font-mono"><?= $stock['produit_matricule'] ?></p>
-                                    </div>
-                                    <span class="px-2 py-0.5 rounded-full text-xs font-medium <?= $stock['umProduit'] == 'metres' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' ?>"><?= $uniteText ?></span>
+                                    </div><span class="px-2 py-0.5 rounded-full text-xs font-medium <?= $stock['umProduit'] == 'metres' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' ?>"><?= $ut ?></span>
                                 </div>
-                                <div class="flex justify-between items-center mb-3">
-                                    <span class="text-lg font-bold text-[var(--text-primary)]"><?= number_format($stock['quantite'], 3) ?> <span class="text-sm font-normal text-[var(--text-muted)]"><?= $uniteText ?></span></span>
-                                    <span class="text-sm font-medium text-emerald-600 dark:text-emerald-400"><?= number_format($stock['quantite'] * $stock['prix'], 2) ?> $</span>
-                                </div>
-                                <?php if ($isActive): ?>
-                                    <button onclick="selectStockForTransfert(<?= $stock['id'] ?>, '<?= htmlspecialchars(addslashes($stock['designation'])) ?>', <?= $stock['quantite'] ?>, '<?= $stock['umProduit'] ?>')"
-                                        class="w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-opacity">
-                                        <i class="fas fa-exchange-alt mr-1.5"></i>Transférer ce stock
-                                    </button>
-                                <?php else: ?>
-                                    <button disabled class="w-full py-2 bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xs font-semibold rounded-lg cursor-not-allowed">
-                                        <i class="fas fa-lock mr-1.5"></i>Transfert désactivé
-                                    </button>
-                                <?php endif; ?>
+                                <div class="flex justify-between items-center mb-3"><span class="text-lg font-bold text-[var(--text-primary)]"><?= number_format($stock['quantite'], 3) ?> <span class="text-sm font-normal text-[var(--text-muted)]"><?= $ut ?></span></span><span class="text-sm font-medium text-emerald-600 dark:text-emerald-400"><?= number_format($stock['quantite'] * $stock['prix'], 2) ?> $</span></div>
+                                <?php if ($isActive): ?><button onclick="selectStockForTransfert(<?= $stock['id'] ?>,'<?= htmlspecialchars(addslashes($stock['designation'])) ?>',<?= $stock['quantite'] ?>,'<?= $stock['umProduit'] ?>')" class="w-full py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-semibold rounded-lg hover:opacity-90 transition-opacity"><i class="fas fa-exchange-alt mr-1.5"></i>Transférer ce stock</button><?php else: ?><button disabled class="w-full py-2 bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xs font-semibold rounded-lg cursor-not-allowed"><i class="fas fa-lock mr-1.5"></i>Transfert désactivé</button><?php endif; ?>
                             </div>
                         <?php endforeach; ?>
                     </div>
@@ -696,14 +604,7 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
             <!-- Recherche -->
             <div class="premium-card p-4 animate-fade-in-up" style="animation-delay:0.2s">
                 <div class="flex items-center gap-3">
-                    <div class="relative flex-1 max-w-md">
-                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"></i>
-                        <input type="text" id="searchInput" placeholder="Rechercher par boutique, produit ou ID..." class="w-full input-glass pl-10 pr-4 py-2.5 text-sm">
-                    </div>
-                    <span class="text-xs text-[var(--text-muted)] hidden sm:block">Page <?= $page ?>/<?= $totalPages ?></span>
-                    <button onclick="window.location.reload()" class="p-2.5 rounded-xl glass hover:bg-white/20 transition-all text-[var(--text-muted)]" title="Actualiser">
-                        <i class="fas fa-sync-alt text-sm"></i>
-                    </button>
+                    <div class="relative flex-1 max-w-md"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"></i><input type="text" id="searchInput" placeholder="Rechercher par boutique, produit ou ID..." class="w-full input-glass pl-10 pr-4 py-2.5 text-sm"></div><span class="text-xs text-[var(--text-muted)] hidden sm:block">Page <?= $page ?>/<?= $totalPages ?></span><button onclick="window.location.reload()" class="p-2.5 rounded-xl glass hover:bg-white/20 transition-all text-[var(--text-muted)]" title="Actualiser"><i class="fas fa-sync-alt text-sm"></i></button>
                 </div>
             </div>
 
@@ -724,101 +625,62 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
                         </thead>
                         <tbody class="divide-y divide-[var(--divider)]" id="tableBody">
                             <?php if (!empty($transferts)): ?>
-                                <?php foreach ($transferts as $t):
-                                    $uniteText = $t['umProduit'] == 'metres' ? 'mètres' : 'pièces';
-                                    $isExpediteur = ($t['Expedition'] == $boutique_connectee_id);
-                                    $valeur = $t['quantite_source'] * $t['prix_unitaire'];
-                                ?>
-                                    <tr class="hover:bg-white/5 transition-colors transfert-row"
-                                        data-id="<?= $t['id'] ?>"
-                                        data-expedition="<?= strtolower($t['boutique_expedition']) ?>"
-                                        data-destination="<?= strtolower($t['boutique_destination']) ?>"
-                                        data-produit="<?= strtolower($t['produit_designation']) ?>">
+                                <?php foreach ($transferts as $t): $ut = $t['umProduit'] == 'metres' ? 'mètres' : 'pièces';
+                                    $isExp = ($t['Expedition'] == $boutique_connectee_id);
+                                    $v = $t['quantite_source'] * $t['prix_unitaire']; ?>
+                                    <tr class="hover:bg-white/5 transition-colors transfert-row" data-id="<?= $t['id'] ?>" data-expedition="<?= strtolower($t['boutique_expedition']) ?>" data-destination="<?= strtolower($t['boutique_destination']) ?>" data-produit="<?= strtolower($t['produit_designation']) ?>">
                                         <td class="px-5 py-3.5 text-sm font-mono font-bold text-[var(--text-primary)]">#<?= $t['id'] ?></td>
                                         <td class="px-5 py-3.5 text-sm text-[var(--text-secondary)]"><?= date('d/m/Y', strtotime($t['date'])) ?></td>
-                                        <td class="px-5 py-3.5 text-sm text-[var(--text-primary)]">
-                                            <span class="font-medium"><?= htmlspecialchars($t['produit_designation']) ?></span>
-                                            <span class="text-xs text-[var(--text-muted)] block font-mono"><?= $t['produit_matricule'] ?></span>
-                                        </td>
+                                        <td class="px-5 py-3.5 text-sm text-[var(--text-primary)]"><span class="font-medium"><?= htmlspecialchars($t['produit_designation']) ?></span><span class="text-xs text-[var(--text-muted)] block font-mono"><?= $t['produit_matricule'] ?></span></td>
                                         <td class="px-5 py-3.5">
-                                            <div class="flex items-center gap-2">
-                                                <span class="px-2 py-1 rounded-full text-xs font-medium <?= $isExpediteur ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' : 'bg-gray-100 dark:bg-gray-800 text-[var(--text-secondary)]' ?>"><?= htmlspecialchars($t['boutique_expedition']) ?></span>
-                                                <i class="fas fa-arrow-right text-purple-500 text-xs"></i>
-                                                <span class="px-2 py-1 rounded-full text-xs font-medium <?= !$isExpediteur ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-gray-100 dark:bg-gray-800 text-[var(--text-secondary)]' ?>"><?= htmlspecialchars($t['boutique_destination']) ?></span>
-                                            </div>
+                                            <div class="flex items-center gap-2"><span class="px-2 py-1 rounded-full text-xs font-medium <?= $isExp ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' : 'bg-gray-100 dark:bg-gray-800 text-[var(--text-secondary)]' ?>"><?= htmlspecialchars($t['boutique_expedition']) ?></span><i class="fas fa-arrow-right text-purple-500 text-xs"></i><span class="px-2 py-1 rounded-full text-xs font-medium <?= !$isExp ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 'bg-gray-100 dark:bg-gray-800 text-[var(--text-secondary)]' ?>"><?= htmlspecialchars($t['boutique_destination']) ?></span></div>
                                         </td>
-                                        <td class="px-5 py-3.5 text-sm font-bold text-[var(--text-primary)]"><?= number_format($t['quantite_source'], 3) ?> <span class="text-xs text-[var(--text-muted)] font-normal"><?= $uniteText ?></span></td>
-                                        <td class="px-5 py-3.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400"><?= number_format($valeur, 2) ?> $</td>
-                                        <td class="px-5 py-3.5 text-center">
-                                            <span class="px-2.5 py-1 rounded-full text-xs font-medium <?= $isExpediteur ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' ?>">
-                                                <i class="fas fa-<?= $isExpediteur ? 'paper-plane' : 'inbox' ?> mr-1"></i><?= $isExpediteur ? 'Envoi' : 'Réception' ?>
-                                            </span>
-                                        </td>
+                                        <td class="px-5 py-3.5 text-sm font-bold text-[var(--text-primary)]"><?= number_format($t['quantite_source'], 3) ?> <span class="text-xs text-[var(--text-muted)] font-normal"><?= $ut ?></span></td>
+                                        <td class="px-5 py-3.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400"><?= number_format($v, 2) ?> $</td>
+                                        <td class="px-5 py-3.5 text-center"><span class="px-2.5 py-1 rounded-full text-xs font-medium <?= $isExp ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' ?>"><i class="fas fa-<?= $isExp ? 'paper-plane' : 'inbox' ?> mr-1"></i><?= $isExp ? 'Envoi' : 'Réception' ?></span></td>
                                     </tr>
                                 <?php endforeach; ?>
-                            <?php else: ?>
-                                <tr>
-                                    <td colspan="7" class="px-5 py-12 text-center">
-                                        <i class="fas fa-exchange-alt text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                            <?php else: ?><tr>
+                                    <td colspan="7" class="px-5 py-12 text-center"><i class="fas fa-exchange-alt text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
                                         <p class="text-[var(--text-secondary)] font-medium">Aucun transfert enregistré</p>
-                                        <p class="text-xs text-[var(--text-muted)] mt-1">Utilisez le bouton "Nouveau transfert" pour commencer</p>
                                     </td>
-                                </tr>
-                            <?php endif; ?>
+                                </tr><?php endif; ?>
                         </tbody>
                     </table>
                 </div>
-
-                <div id="noResults" class="hidden text-center py-12">
-                    <i class="fas fa-search text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
-                    <p class="text-[var(--text-secondary)] font-medium">Aucun résultat trouvé</p>
+                <div id="noResults" class="hidden text-center py-12"><i class="fas fa-search text-4xl text-[var(--text-muted)] opacity-30 mb-3 block"></i>
+                    <p class="text-[var(--text-secondary)]">Aucun résultat</p>
                 </div>
-
                 <?php if ($totalPages > 1): ?>
                     <div class="px-5 py-4 border-t border-[var(--divider)] flex items-center justify-between">
                         <span class="text-xs text-[var(--text-muted)] hidden sm:block"><?= ($page - 1) * $limit + 1 ?>-<?= min($page * $limit, $total_transferts) ?> sur <?= $total_transferts ?></span>
                         <div class="flex items-center gap-1.5 mx-auto sm:mx-0">
                             <a href="?page=<?= max(1, $page - 1) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page <= 1 ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-left text-xs"></i></a>
-                            <?php for ($i = max(1, $page - 1); $i <= min($totalPages, $page + 1); $i++): ?>
-                                <a href="?page=<?= $i ?>" class="w-8 h-8 rounded-lg text-sm font-medium flex items-center justify-center transition-all <?= $i == $page ? 'btn-purple shadow-md' : 'glass hover:bg-white/20 text-[var(--text-secondary)]' ?>"><?= $i ?></a>
-                            <?php endfor; ?>
+                            <?php for ($i = max(1, $page - 1); $i <= min($totalPages, $page + 1); $i++): ?><a href="?page=<?= $i ?>" class="w-8 h-8 rounded-lg text-sm font-medium flex items-center justify-center transition-all <?= $i == $page ? 'btn-purple shadow-md' : 'glass hover:bg-white/20 text-[var(--text-secondary)]' ?>"><?= $i ?></a><?php endfor; ?>
                             <a href="?page=<?= min($totalPages, $page + 1) ?>" class="w-8 h-8 rounded-lg glass flex items-center justify-center text-sm <?= $page >= $totalPages ? 'opacity-40 pointer-events-none' : 'hover:bg-white/20' ?>"><i class="fas fa-chevron-right text-xs"></i></a>
                         </div>
                     </div>
                 <?php endif; ?>
             </div>
-
         </div>
     </main>
 
-    <!-- ============================================ -->
-    <!-- MODAL NOUVEAU TRANSFERT                       -->
-    <!-- ============================================ -->
+    <!-- MODAL TRANSFERT -->
     <div id="transfertModalOverlay" class="modal-overlay fixed inset-0 z-[100] hidden"></div>
     <div id="transfertModalContent" class="modal-container fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[101] hidden w-[95%] max-w-lg p-6">
         <div class="flex items-center justify-between mb-5">
-            <h3 class="text-lg font-bold text-[var(--text-primary)]"><i class="fas fa-exchange-alt mr-2 text-purple-500"></i>Nouveau transfert</h3>
-            <button onclick="closeTransfertModal()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><i class="fas fa-times"></i></button>
+            <h3 class="text-lg font-bold text-[var(--text-primary)]"><i class="fas fa-exchange-alt mr-2 text-purple-500"></i>Nouveau transfert</h3><button onclick="closeTransfertModal()" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"><i class="fas fa-times"></i></button>
         </div>
         <form method="POST" action="transferts-boutique.php" class="space-y-4">
             <input type="hidden" name="effectuer_transfert" value="1">
-
-            <div>
-                <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Boutique source</label>
-                <div class="p-3 rounded-xl bg-[var(--input-bg)] border border-[var(--input-border)] text-sm font-medium text-[var(--text-primary)]">
-                    <?= htmlspecialchars($boutique_connectee['nom']) ?> <span class="text-xs text-[var(--text-muted)]">(Votre boutique)</span>
-                </div>
+            <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Boutique source</label>
+                <div class="p-3 rounded-xl bg-[var(--input-bg)] border border-[var(--input-border)] text-sm font-medium text-[var(--text-primary)]"><?= htmlspecialchars($boutique_connectee['nom']) ?> <span class="text-xs text-[var(--text-muted)]">(Votre boutique)</span></div>
             </div>
-
             <div>
                 <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Stock à transférer *</label>
                 <select name="stock_id" id="stockSelect" required class="w-full input-glass px-3 py-2.5 text-sm" onchange="updateStockInfo()">
                     <option value="">Sélectionnez un stock</option>
-                    <?php foreach ($stocks as $s): ?>
-                        <option value="<?= $s['id'] ?>" data-quantite="<?= $s['quantite'] ?>" data-produit="<?= htmlspecialchars($s['designation']) ?>" data-unite="<?= $s['umProduit'] ?>" data-prix="<?= $s['prix'] ?>">
-                            <?= htmlspecialchars($s['designation']) ?> (<?= number_format($s['quantite'], 3) ?> disp.)
-                        </option>
-                    <?php endforeach; ?>
+                    <?php foreach ($stocks as $s): ?><option value="<?= $s['id'] ?>" data-quantite="<?= $s['quantite'] ?>" data-produit="<?= htmlspecialchars($s['designation']) ?>" data-unite="<?= $s['umProduit'] ?>" data-prix="<?= $s['prix'] ?>"><?= htmlspecialchars($s['designation']) ?> (<?= number_format($s['quantite'], 3) ?> disp.)</option><?php endforeach; ?>
                 </select>
                 <div id="stockInfo" class="hidden mt-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 text-xs space-y-1">
                     <p><strong>Produit :</strong> <span id="infoProduit">-</span></p>
@@ -826,76 +688,47 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
                     <p><strong>Prix unitaire :</strong> <span id="infoPrix">0.00</span> $</p>
                 </div>
             </div>
-
-            <div>
-                <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Boutique destination *</label>
-                <select name="boutique_destination" required class="w-full input-glass px-3 py-2.5 text-sm">
-                    <option value="">Sélectionnez...</option>
-                    <?php foreach ($boutiques_destination as $b): ?>
-                        <option value="<?= $b['id'] ?>"><?= htmlspecialchars($b['nom']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <?php if (empty($boutiques_destination)): ?>
-                    <p class="text-xs text-red-500 mt-1">Aucune autre boutique disponible</p>
-                <?php endif; ?>
-            </div>
-
-            <div>
-                <label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Quantité *</label>
-                <div class="relative">
-                    <input type="number" name="quantite_transferee" id="quantiteInput" step="0.001" min="0.001" required placeholder="0.000" class="w-full input-glass pl-4 pr-16 py-2.5 text-sm">
-                    <span id="uniteLabel" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)] bg-[var(--input-bg)] px-2 py-0.5 rounded">unités</span>
-                </div>
+            <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Boutique destination *</label><select name="boutique_destination" id="boutiqueDestSelect" required class="w-full input-glass px-3 py-2.5 text-sm">
+                    <option value="">Sélectionnez...</option><?php foreach ($boutiques_destination as $b): ?><option value="<?= $b['id'] ?>"><?= htmlspecialchars($b['nom']) ?></option><?php endforeach; ?>
+                </select><?php if (empty($boutiques_destination)): ?><p class="text-xs text-red-500 mt-1">Aucune autre boutique disponible</p><?php endif; ?></div>
+            <div><label class="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Quantité *</label>
+                <div class="relative"><input type="number" name="quantite_transferee" id="quantiteInput" step="0.001" min="0.001" required placeholder="0.000" class="w-full input-glass pl-4 pr-16 py-2.5 text-sm"><span id="uniteLabel" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)] bg-[var(--input-bg)] px-2 py-0.5 rounded">unités</span></div>
                 <p class="text-xs text-[var(--text-muted)] mt-1" id="quantiteMaxInfo"></p>
             </div>
-
             <div id="valeurBox" class="hidden p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/30">
                 <div class="flex items-center justify-between">
                     <p class="text-xs text-purple-700 dark:text-purple-300 font-medium">Valeur du transfert</p>
                     <p class="text-lg font-bold text-purple-900 dark:text-purple-200" id="valeurTotale">0.00 $</p>
                 </div>
             </div>
-
             <div class="p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/30">
-                <p class="text-xs text-purple-700 dark:text-purple-300"><i class="fas fa-info-circle mr-1"></i>La quantité sera déduite de votre stock et ajoutée au stock destination. Le prix unitaire est conservé.</p>
+                <p class="text-xs text-purple-700 dark:text-purple-300"><i class="fas fa-info-circle mr-1"></i>La quantité sera déduite de votre stock et ajoutée au stock destination.</p>
             </div>
-
-            <div class="flex justify-end gap-3 pt-2">
-                <button type="button" onclick="closeTransfertModal()" class="px-4 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button>
-                <button type="submit" name="effectuer_transfert" id="submitBtn" class="btn-purple px-5 py-2.5 rounded-xl text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                    <i class="fas fa-paper-plane mr-1.5"></i>Effectuer le transfert
-                </button>
-            </div>
+            <div class="flex justify-end gap-3 pt-2"><button type="button" onclick="closeTransfertModal()" class="px-4 py-2.5 rounded-xl glass text-sm text-[var(--text-secondary)] hover:bg-white/20 transition-all">Annuler</button><button type="submit" name="effectuer_transfert" id="submitBtn" class="btn-purple px-5 py-2.5 rounded-xl text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled><i class="fas fa-paper-plane mr-1.5"></i>Effectuer le transfert</button></div>
         </form>
     </div>
 
     <script>
         // Theme
-        const themeToggle = document.getElementById('theme-toggle');
-        const html = document.documentElement;
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) html.classList.add('dark');
+        const themeToggle = document.getElementById('theme-toggle'),
+            html = document.documentElement;
+        const st = localStorage.getItem('theme');
+        if (st === 'dark' || (!st && window.matchMedia('(prefers-color-scheme:dark)').matches)) html.classList.add('dark');
         themeToggle.addEventListener('click', () => {
             html.classList.toggle('dark');
-            localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
+            localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light')
         });
 
         // Sidebar
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('overlay');
+        const sidebar = document.getElementById('sidebar'),
+            overlay = document.getElementById('overlay');
 
         function toggleSidebar() {
             sidebar.classList.toggle('open');
-            overlay.classList.toggle('hidden');
+            overlay.classList.toggle('hidden')
         }
         document.getElementById('mobileMenuBtn').addEventListener('click', toggleSidebar);
         overlay.addEventListener('click', toggleSidebar);
-        document.querySelectorAll('.sidebar a').forEach(l => l.addEventListener('click', () => {
-            if (window.innerWidth < 768) {
-                sidebar.classList.remove('open');
-                overlay.classList.add('hidden')
-            }
-        }));
 
         // Modals
         function openModal(o, c) {
@@ -909,34 +742,32 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
         }
 
         function openTransfertModal() {
-            document.getElementById('transfertForm')?.reset();
             document.getElementById('stockInfo')?.classList.add('hidden');
             document.getElementById('valeurBox')?.classList.add('hidden');
             document.getElementById('quantiteMaxInfo').textContent = '';
             document.getElementById('uniteLabel').textContent = 'unités';
             document.getElementById('submitBtn').disabled = true;
-            openModal('transfertModalOverlay', 'transfertModalContent');
+            openModal('transfertModalOverlay', 'transfertModalContent')
         }
 
         function closeTransfertModal() {
-            closeModal('transfertModalOverlay', 'transfertModalContent');
+            closeModal('transfertModalOverlay', 'transfertModalContent')
         }
 
         function selectStockForTransfert(id, produit, quantite, unite) {
             document.getElementById('stockSelect').value = id;
             updateStockInfo();
             openTransfertModal();
-            setTimeout(() => document.getElementById('quantiteInput').focus(), 300);
+            setTimeout(() => document.getElementById('quantiteInput').focus(), 300)
         }
 
-        // Update stock info
         function updateStockInfo() {
-            const sel = document.getElementById('stockSelect');
-            const opt = sel.options[sel.selectedIndex];
-            const infoBox = document.getElementById('stockInfo');
+            const sel = document.getElementById('stockSelect'),
+                opt = sel.options[sel.selectedIndex],
+                box = document.getElementById('stockInfo');
             if (opt && opt.value) {
-                const q = parseFloat(opt.dataset.quantite);
-                const u = opt.dataset.unite === 'metres' ? 'mètres' : 'pièces';
+                const q = parseFloat(opt.dataset.quantite),
+                    u = opt.dataset.unite === 'metres' ? 'mètres' : 'pièces';
                 document.getElementById('infoProduit').textContent = opt.dataset.produit;
                 document.getElementById('infoQuantite').textContent = q.toFixed(3);
                 document.getElementById('infoUnite').textContent = u;
@@ -946,37 +777,35 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
                 document.getElementById('quantiteInput').max = q;
                 document.getElementById('quantiteInput').value = '';
                 document.getElementById('valeurBox').classList.add('hidden');
-                document.getElementById('submitBtn').disabled = document.getElementById('boutique_destination').options.length <= 1;
-                infoBox.classList.remove('hidden');
+                document.getElementById('submitBtn').disabled = (document.getElementById('boutiqueDestSelect')?.options.length <= 1);
+                box.classList.remove('hidden');
             } else {
-                infoBox.classList.add('hidden');
+                box.classList.add('hidden');
                 document.getElementById('quantiteMaxInfo').textContent = '';
-                document.getElementById('submitBtn').disabled = true;
+                document.getElementById('submitBtn').disabled = true
             }
         }
 
-        // Valeur en temps réel
         document.getElementById('quantiteInput').addEventListener('input', function() {
-            const sel = document.getElementById('stockSelect');
-            const opt = sel.options[sel.selectedIndex];
+            const sel = document.getElementById('stockSelect'),
+                opt = sel.options[sel.selectedIndex];
             if (!opt || !opt.value) return;
-            const q = parseFloat(opt.dataset.quantite);
-            const p = parseFloat(opt.dataset.prix);
-            const v = parseFloat(this.value) || 0;
-            const box = document.getElementById('valeurBox');
+            const q = parseFloat(opt.dataset.quantite),
+                p = parseFloat(opt.dataset.prix),
+                v = parseFloat(this.value) || 0,
+                box = document.getElementById('valeurBox');
             if (v > 0 && v <= q) {
                 box.classList.remove('hidden');
                 document.getElementById('valeurTotale').textContent = (v * p).toFixed(2) + ' $';
-                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').disabled = false
             } else {
                 box.classList.add('hidden');
-                document.getElementById('submitBtn').disabled = true;
+                document.getElementById('submitBtn').disabled = true
             }
         });
 
-        // Close modal on overlay click
         document.getElementById('transfertModalOverlay')?.addEventListener('click', function(e) {
-            if (e.target === this) closeTransfertModal();
+            if (e.target === this) closeTransfertModal()
         });
 
         // Search
@@ -986,21 +815,19 @@ $statut_boutique = ($boutique_connectee['statut'] == 0 && $boutique_connectee['a
             document.querySelectorAll('.transfert-row').forEach(r => {
                 const m = r.dataset.id.includes(s) || r.dataset.expedition.includes(s) || r.dataset.destination.includes(s) || r.dataset.produit.includes(s);
                 r.style.display = m ? '' : 'none';
-                if (m) found = true;
+                if (m) found = true
             });
             document.getElementById('noResults')?.classList.toggle('hidden', found || s === '');
             document.getElementById('tableBody')?.classList.toggle('hidden', !found && s !== '');
         });
 
-        // Escape
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
                 closeTransfertModal();
-                if (sidebar.classList.contains('open')) toggleSidebar();
+                if (sidebar.classList.contains('open')) toggleSidebar()
             }
         });
     </script>
-
     <?php unset($_SESSION['msg']); ?>
 </body>
 
